@@ -55,11 +55,16 @@
       "section": "送配電・系統"
     },
     {
-      "name": "日本経済新聞（エネルギー関連）",
+      "name": "日本経済新聞",
       "type": "google_news",
-      "query": "site:nikkei.com (エネルギー OR 電力 OR 原子力 OR 脱炭素 OR 再エネ OR 送配電)",
+      "query": "site:nikkei.com エネルギー",
       "section": "規制・政策",
-      "_note": "日経はネイティブRSS無し・有料。Google News経由で見出しとリンクのみ取得"
+      "keywords": [
+        "エネルギー", "電力", "原子力", "脱炭素", "再エネ", "送配電",
+        "発電", "送電", "電気", "電源", "蓄電", "ガス", "LNG", "水素",
+        "省エネ", "カーボンニュートラル", "CO2", "GX"
+      ],
+      "_note": "Google Newsクエリは緩く、keywordsで二次フィルタ。日経はネイティブRSS無し・有料。Google News経由で見出しとリンクのみ取得"
     }
   ]
 }

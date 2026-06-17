@@ -7,7 +7,7 @@ grid-news collector
 public/ は data/ から毎回完全に再構築する(=GitHub Pages成果物は使い捨て可能)。
 """
 from __future__ import annotations
-import json, os, re, sys, datetime as dt, difflib
+import json, os, re, sys, datetime as dt, difflib, unicodedata
 from pathlib import Path
 from urllib.parse import urlparse, urlunparse, parse_qsl, urlencode
 
@@ -161,6 +161,18 @@ def _item(src: dict, title: str, url: str, published: str,
     }
 
 
+def _apply_keywords(items: list[dict], keywords: list[str]) -> list[dict]:
+    """タイトルにキーワード（部分一致・大文字小文字無視・NFC正規化）を含む記事だけ残す。
+    空リスト・空文字列のみのリストならフィルタなし。"""
+    kws = [unicodedata.normalize("NFC", k).lower() for k in keywords if k]
+    if not kws:
+        return items
+    return [
+        it for it in items
+        if any(k in unicodedata.normalize("NFC", it["title"]).lower() for k in kws)
+    ]
+
+
 def collect_all(sources: list[dict]) -> list[dict]:
     items = []
     for src in sources:
@@ -172,6 +184,11 @@ def collect_all(sources: list[dict]) -> list[dict]:
                 got = collect_google_news(src)
             else:
                 got = collect_rss(src)
+            kw = src.get("keywords", [])
+            before = len(got)
+            got = _apply_keywords(got, kw)
+            if kw and before != len(got):
+                print(f"    keyword filter: {before} -> {len(got)}", file=sys.stderr)
             items.extend(got)
             print(f"  [{kind:11}] {src['name']}: {len(got)} 件", file=sys.stderr)
         except Exception as ex:  # 1媒体の失敗で全体を止めない
@@ -227,17 +244,27 @@ def _section_order(sources: list[dict], config: dict) -> list[str]:
 
 
 def _render_edition(env, config, date_label, items, order, is_latest):
-    by_sec: dict[str, list] = {}
+    by_sec: dict[str, dict[str, list]] = {}
     for it in items:
         d = parse_date(it.get("published"))
         it["_sort"] = d.timestamp() if d else 0
         it["date_display"] = f"{d.month}月{d.day}日" if d else ""
-        by_sec.setdefault(it["section"], []).append(it)
+        by_sec.setdefault(it.get("section", "ニュース"), {}).setdefault(it.get("source", "不明"), []).append(it)
+
     sections = []
     for sec in order + [s for s in by_sec if s not in order]:
-        if sec in by_sec:
-            arts = sorted(by_sec[sec], key=lambda x: x["_sort"], reverse=True)
-            sections.append({"name": sec, "arts": arts})
+        if sec not in by_sec:
+            continue
+        # source ごとにグループ化、各グループ内は日付降順
+        groups = []
+        for src_name, arts in by_sec[sec].items():
+            arts_sorted = sorted(arts, key=lambda x: x["_sort"], reverse=True)
+            groups.append({"source": src_name, "arts": arts_sorted})
+        # source グループは、最新記事の日付が新しい順で並べる。同率はソース名昇順で安定化
+        groups.sort(key=lambda g: (-g["arts"][0]["_sort"], g["source"]))
+        total_in_sec = sum(len(g["arts"]) for g in groups)
+        sections.append({"name": sec, "groups": groups, "total": total_in_sec})
+
     tmpl = env.get_template("newspaper.html.j2")
     return tmpl.render(
         masthead=config.get("masthead", "THE GRID DESK"),

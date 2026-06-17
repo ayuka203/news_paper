@@ -59,20 +59,27 @@
     font-size:.82rem; letter-spacing:.34em; text-transform:uppercase;
     font-weight:600; white-space:nowrap;
   }
+  .sec-count{font-size:.62rem; color:var(--muted); letter-spacing:.14em;
+             font-weight:400; margin-left:.4rem}
 
-  /* lead = section冒頭の主記事 */
-  .lead{
-    border-bottom:1px solid var(--rule); padding-bottom:1.1rem;
-    margin-bottom:1.1rem;
+  /* ---- source groups ---- */
+  .source-group{margin:1.4rem 0; padding-left:.8rem; border-left:2px solid var(--rule)}
+  .source-title{
+    font-size:.92rem; font-weight:700; color:var(--accent);
+    margin:0 0 .55rem; letter-spacing:.04em;
+    display:flex; align-items:center; gap:.6rem;
   }
-  .lead .hl{font-size:clamp(1.5rem,3.6vw,2.1rem); line-height:1.18}
+  .source-title .grp-count{
+    font-size:.66rem; color:var(--muted); font-weight:400;
+    letter-spacing:.1em;
+  }
+  .source-arts{display:grid; grid-template-columns:repeat(auto-fill,minmax(280px,1fr));
+               gap:.6rem 1.4rem}
 
-  .columns{column-count:3; column-gap:2.1rem}
-  @media(max-width:820px){.columns{column-count:2;column-gap:1.5rem}}
-  @media(max-width:560px){.columns{column-count:1}}
-
-  .art{break-inside:avoid; padding-bottom:.95rem; margin-bottom:.95rem;
-       border-bottom:1px dotted var(--rule)}
+  /* ---- articles ---- */
+  .art{padding-bottom:.6rem; margin-bottom:.6rem;
+       border-bottom:1px dotted var(--rule); break-inside:avoid}
+  .art:last-child{border-bottom:none}
   .hl{font-weight:600; font-size:1.02rem; line-height:1.35; margin:0}
   .hl a{color:var(--ink); text-decoration:none;
         background:linear-gradient(var(--rule),var(--rule)) 0 1.15em/0 1px no-repeat;
@@ -113,28 +120,24 @@
   {% endif %}
 
   {% for sec in sections %}
+  {% if sec.groups %}
   <section class="section">
-    <div class="section-head"><span>{{ sec.name }}</span></div>
-
-    {% if sec.arts %}
-      {% set lead = sec.arts[0] %}
-      <article class="art lead">
-        <p class="hl"><a href="{{ lead.url }}" target="_blank" rel="noopener">{{ lead.title }}</a></p>
-        <p class="meta"><span class="src">{{ lead.source }}</span>{% if lead.date_display %} &nbsp;·&nbsp; {{ lead.date_display }}{% endif %}</p>
-      </article>
-
-      {% if sec.arts|length > 1 %}
-      <div class="columns">
-        {% for a in sec.arts[1:] %}
-        <article class="art">
-          <p class="hl"><a href="{{ a.url }}" target="_blank" rel="noopener">{{ a.title }}</a></p>
-          <p class="meta"><span class="src">{{ a.source }}</span>{% if a.date_display %} &nbsp;·&nbsp; {{ a.date_display }}{% endif %}</p>
-        </article>
-        {% endfor %}
+    <div class="section-head"><span>{{ sec.name }}</span><small class="sec-count">{{ sec.total }}本</small></div>
+    {% for grp in sec.groups %}
+      <div class="source-group">
+        <h3 class="source-title">{{ grp.source }} <span class="grp-count">{{ grp.arts|length }}</span></h3>
+        <div class="source-arts">
+          {% for a in grp.arts %}
+          <article class="art">
+            <p class="hl"><a href="{{ a.url }}" target="_blank" rel="noopener">{{ a.title }}</a></p>
+            {% if a.date_display %}<p class="meta">{{ a.date_display }}</p>{% endif %}
+          </article>
+          {% endfor %}
+        </div>
       </div>
-      {% endif %}
-    {% endif %}
+    {% endfor %}
   </section>
+  {% endif %}
   {% endfor %}
 
   <footer>

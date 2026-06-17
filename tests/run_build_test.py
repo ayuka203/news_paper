@@ -23,8 +23,25 @@ for it in d: it["first_seen"] = "2026-06-16"
 cfg = json.loads((Path(C.ROOT)/"sources.json").read_text(encoding="utf-8"))
 C.build_site(d, cfg["sources"], cfg)
 idx = (Path(C.ROOT)/"public"/"index.html").read_text(encoding="utf-8")
-for must in ["THE GRID DESK","規制・政策","送配電・系統","無電柱化 第3期計画を閣議決定","系統連系の新ルール公表","2026年6月16日"]:
+for must in ["THE GRID DESK","規制・政策","送配電・系統","無電柱化 第3期計画を閣議決定","系統連系の新ルール公表","2026年6月16日","source-group","source-title"]:
     assert must in idx, f"missing: {must}"
 print("index.html bytes:", len(idx))
 print("archive pages:", [p.name for p in (Path(C.ROOT)/'public'/'archive').glob('*.html')])
+# 4) キーワードフィルタのテスト
+sample = [
+    {"title": "エネルギー政策の最新動向"},
+    {"title": "AI技術の発展について"},
+    {"title": "GXとカーボンニュートラル"},  # 大文字
+    {"title": "野球の試合結果"},
+]
+# 通常
+assert len(C._apply_keywords(sample, ["エネルギー", "GX"])) == 2
+# 大文字小文字無視
+assert len(C._apply_keywords(sample, ["gx"])) == 1
+# 空リスト → 全通過
+assert len(C._apply_keywords(sample, [])) == 4
+# 空文字混入 → 空扱い
+assert len(C._apply_keywords(sample, [""])) == 4
+assert len(C._apply_keywords(sample, ["", "エネルギー"])) == 1
+print("keyword filter tests OK")
 print("ALL OK")
