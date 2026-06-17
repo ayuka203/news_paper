@@ -231,7 +231,7 @@ def _render_edition(env, config, date_label, items, order, is_latest):
     for it in items:
         d = parse_date(it.get("published"))
         it["_sort"] = d.timestamp() if d else 0
-        it["date_display"] = d.strftime("%-m月%-d日") if d else ""
+        it["date_display"] = f"{d.month}月{d.day}日" if d else ""
         by_sec.setdefault(it["section"], []).append(it)
     sections = []
     for sec in order + [s for s in by_sec if s not in order]:
