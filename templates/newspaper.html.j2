@@ -1,0 +1,147 @@
+<!doctype html>
+<html lang="ja">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>{{ masthead }} — {{ edition_date }}</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Noto+Serif+JP:wght@400;600;900&family=Libre+Caslon+Text:ital,wght@0,400;0,700;1,400&display=swap" rel="stylesheet">
+<style>
+  :root{
+    --paper:#fbfaf6; --ink:#1b1a18; --muted:#6c6660;
+    --rule:#cfc8bd; --accent:#7a1f2b; --hair:#1b1a18;
+  }
+  *{box-sizing:border-box}
+  html{-webkit-text-size-adjust:100%}
+  body{
+    margin:0; background:var(--paper); color:var(--ink);
+    font-family:"Noto Serif JP",serif; line-height:1.5;
+    padding:clamp(1rem,4vw,3rem) clamp(1rem,5vw,3rem);
+  }
+  .sheet{max-width:1100px;margin:0 auto}
+
+  /* ---- masthead ---- */
+  .masthead{text-align:center}
+  .kicker{
+    font-family:"Libre Caslon Text",serif; letter-spacing:.42em;
+    font-size:.62rem; text-transform:uppercase; color:var(--accent);
+    margin:0 0 .55rem; padding-left:.42em;
+  }
+  .title{
+    font-weight:900; font-size:clamp(2.4rem,8vw,4.6rem);
+    letter-spacing:.02em; line-height:.95; margin:0;
+    border-top:3px solid var(--hair); border-bottom:1px solid var(--hair);
+    padding:.35rem 0 .25rem;
+  }
+  .subtitle{
+    font-size:.8rem; color:var(--muted); margin:.45rem 0 0;
+    letter-spacing:.18em;
+  }
+  .dateline{
+    display:flex; justify-content:space-between; align-items:center;
+    border-top:1px solid var(--hair); border-bottom:1px solid var(--hair);
+    margin-top:.7rem; padding:.3rem .1rem; font-size:.68rem;
+    letter-spacing:.14em; text-transform:uppercase; color:var(--muted);
+  }
+  .dateline b{color:var(--ink);font-weight:600}
+
+  /* ---- sections ---- */
+  .section{margin-top:2.2rem}
+  .section-head{
+    display:flex; align-items:center; gap:.9rem;
+    margin:0 0 1rem; color:var(--accent);
+  }
+  .section-head::before,.section-head::after{
+    content:""; flex:1; height:1px; background:var(--rule);
+  }
+  .section-head span{
+    font-size:.82rem; letter-spacing:.34em; text-transform:uppercase;
+    font-weight:600; white-space:nowrap;
+  }
+
+  /* lead = section冒頭の主記事 */
+  .lead{
+    border-bottom:1px solid var(--rule); padding-bottom:1.1rem;
+    margin-bottom:1.1rem;
+  }
+  .lead .hl{font-size:clamp(1.5rem,3.6vw,2.1rem); line-height:1.18}
+
+  .columns{column-count:3; column-gap:2.1rem}
+  @media(max-width:820px){.columns{column-count:2;column-gap:1.5rem}}
+  @media(max-width:560px){.columns{column-count:1}}
+
+  .art{break-inside:avoid; padding-bottom:.95rem; margin-bottom:.95rem;
+       border-bottom:1px dotted var(--rule)}
+  .hl{font-weight:600; font-size:1.02rem; line-height:1.35; margin:0}
+  .hl a{color:var(--ink); text-decoration:none;
+        background:linear-gradient(var(--rule),var(--rule)) 0 1.15em/0 1px no-repeat;
+        transition:background-size .2s}
+  .hl a:hover{background-size:100% 1px; color:var(--accent)}
+  .meta{font-size:.68rem; letter-spacing:.1em; text-transform:uppercase;
+        color:var(--muted); margin:.35rem 0 0}
+  .meta .src{color:var(--accent); font-weight:600}
+
+  .empty{text-align:center; color:var(--muted); padding:3rem 0;
+         font-size:1.1rem; letter-spacing:.1em}
+
+  footer{margin-top:2.6rem; border-top:3px double var(--hair);
+         padding-top:.7rem; display:flex; justify-content:space-between;
+         font-size:.64rem; letter-spacing:.12em; text-transform:uppercase;
+         color:var(--muted)}
+  footer a{color:var(--accent)}
+
+  @media(prefers-reduced-motion:reduce){*{transition:none!important}}
+</style>
+</head>
+<body>
+<div class="sheet">
+
+  <header class="masthead">
+    <p class="kicker">Energy · Nuclear · Grid — Regulatory Digest</p>
+    <h1 class="title">{{ masthead }}</h1>
+    {% if subtitle %}<p class="subtitle">{{ subtitle }}</p>{% endif %}
+    <div class="dateline">
+      <span><b>{{ edition_date }}</b></span>
+      <span>{% if is_latest %}最新号{% else %}過去号{% endif %} · 全{{ total }}本</span>
+      <span>自動編集</span>
+    </div>
+  </header>
+
+  {% if total == 0 %}
+    <p class="empty">本日の更新はありません。</p>
+  {% endif %}
+
+  {% for sec in sections %}
+  <section class="section">
+    <div class="section-head"><span>{{ sec.name }}</span></div>
+
+    {% if sec.arts %}
+      {% set lead = sec.arts[0] %}
+      <article class="art lead">
+        <p class="hl"><a href="{{ lead.url }}" target="_blank" rel="noopener">{{ lead.title }}</a></p>
+        <p class="meta"><span class="src">{{ lead.source }}</span>{% if lead.date_display %} &nbsp;·&nbsp; {{ lead.date_display }}{% endif %}</p>
+      </article>
+
+      {% if sec.arts|length > 1 %}
+      <div class="columns">
+        {% for a in sec.arts[1:] %}
+        <article class="art">
+          <p class="hl"><a href="{{ a.url }}" target="_blank" rel="noopener">{{ a.title }}</a></p>
+          <p class="meta"><span class="src">{{ a.source }}</span>{% if a.date_display %} &nbsp;·&nbsp; {{ a.date_display }}{% endif %}</p>
+        </article>
+        {% endfor %}
+      </div>
+      {% endif %}
+    {% endif %}
+  </section>
+  {% endfor %}
+
+  <footer>
+    <span>{{ generated }} 生成</span>
+    <span><a href="archive/index.html">過去号一覧 →</a></span>
+  </footer>
+
+</div>
+</body>
+</html>

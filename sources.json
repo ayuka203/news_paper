@@ -1,0 +1,65 @@
+{
+  "masthead": "THE GRID DESK",
+  "subtitle": "エネルギー・原子力・送配電 規制ダイジェスト",
+  "section_order": ["規制・政策", "送配電・系統", "原子力", "海外"],
+
+  "_メモ": "type: rss=ネイティブRSS / google_news=任意サイトをGoogle News経由でRSS化(query必須) / html=スクレイプ(item_selector必須)。RSSが無い・取得が弾かれる媒体はgoogle_newsが安定。英語媒体は hl/gl/ceid を en に。",
+
+  "sources": [
+    {
+      "name": "EIA Today in Energy",
+      "type": "rss",
+      "url": "https://www.eia.gov/rss/todayinenergy.xml",
+      "section": "海外",
+      "_note": "確認済みネイティブRSS。プレスは https://www.eia.gov/rss/press_rss.xml"
+    },
+    {
+      "name": "Oxford Institute for Energy Studies",
+      "type": "rss",
+      "url": "https://www.oxfordenergy.org/feed/",
+      "section": "海外",
+      "_note": "WordPress標準フィードの想定。0件なら下のgoogle_news版に切替"
+    },
+    {
+      "name": "World Nuclear News",
+      "type": "google_news",
+      "query": "site:world-nuclear-news.org",
+      "hl": "en-US", "gl": "US", "ceid": "US:en",
+      "section": "原子力"
+    },
+    {
+      "name": "T&D World",
+      "type": "google_news",
+      "query": "site:tdworld.com",
+      "hl": "en-US", "gl": "US", "ceid": "US:en",
+      "section": "送配電・系統"
+    },
+    {
+      "name": "経済産業省（エネルギー関連）",
+      "type": "google_news",
+      "query": "site:meti.go.jp (エネルギー OR 電力 OR 原子力 OR 送配電 OR 再エネ)",
+      "section": "規制・政策",
+      "_note": "完全網羅したい場合は https://www.meti.go.jp/rss/ のエネルギー・環境カテゴリRSSのURLを取得し type:rss で差し替え"
+    },
+    {
+      "name": "METI Journal ONLINE",
+      "type": "google_news",
+      "query": "site:journal.meti.go.jp",
+      "section": "規制・政策",
+      "_note": "ネイティブRSSは https://journal.meti.go.jp/new-rss/ 記載のURLに差し替え可"
+    },
+    {
+      "name": "電気新聞",
+      "type": "google_news",
+      "query": "site:denkishimbun.com",
+      "section": "送配電・系統"
+    },
+    {
+      "name": "日本経済新聞（エネルギー関連）",
+      "type": "google_news",
+      "query": "site:nikkei.com (エネルギー OR 電力 OR 原子力 OR 脱炭素 OR 再エネ OR 送配電)",
+      "section": "規制・政策",
+      "_note": "日経はネイティブRSS無し・有料。Google News経由で見出しとリンクのみ取得"
+    }
+  ]
+}
