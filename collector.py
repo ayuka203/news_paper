@@ -245,7 +245,8 @@ def _section_order(sources: list[dict], config: dict) -> list[str]:
 
 def _render_edition(env, config, date_label, items, order, is_latest):
     by_sec: dict[str, dict[str, list]] = {}
-    for it in items:
+    for raw in items:
+        it = dict(raw)  # シャローコピーで元 dict の汚染を防ぐ
         d = parse_date(it.get("published"))
         it["_sort"] = d.timestamp() if d else 0
         it["date_display"] = f"{d.month}月{d.day}日" if d else ""
@@ -286,6 +287,22 @@ def _date_label(d: str) -> str:
         return d
 
 
+def _window_label(window_dates: list[str]) -> str:
+    """ローリングウィンドウのedition_date文字列を生成する。
+
+    - 空: today_str() を _date_label に通したもの
+    - 1日: _date_label と同じ
+    - 複数日: "{古い側} 〜 {新しい側}" 形式
+    """
+    if not window_dates:
+        return _date_label(today_str())
+    if len(window_dates) == 1:
+        return _date_label(window_dates[0])
+    end = window_dates[0]
+    start = window_dates[-1]
+    return f"{_date_label(start)} 〜 {_date_label(end)}"
+
+
 def build_site(all_items: list[dict], sources: list[dict], config: dict) -> None:
     PUBLIC.mkdir(exist_ok=True)
     (PUBLIC / "archive").mkdir(exist_ok=True)
@@ -298,20 +315,43 @@ def build_site(all_items: list[dict], sources: list[dict], config: dict) -> None
     for it in all_items:
         by_date.setdefault(it.get("first_seen", today_str()), []).append(it)
     dates = sorted(by_date.keys(), reverse=True)
-    latest = dates[0] if dates else today_str()
 
+    # 各日付のアーカイブを生成（is_latest=False）
+    deduped_by_date: dict[str, list] = {}  # dedup 結果のキャッシュ
     for d in dates:
         items = dedup(by_date[d])
+        deduped_by_date[d] = items
         html = _render_edition(env, config, _date_label(d), items, order,
-                               is_latest=(d == latest))
+                               is_latest=False)
         (PUBLIC / "archive" / f"{d}.html").write_text(html, encoding="utf-8")
-        if d == latest:
-            (PUBLIC / "index.html").write_text(html, encoding="utf-8")
+
+    # index.html は直近N日のローリングウィンドウ
+    raw_window = config.get("index_window_days", 7)
+    try:
+        window_days = int(raw_window)
+    except (TypeError, ValueError):
+        print(f"WARN: index_window_days='{raw_window}' は無効な値です。7日にフォールバックします。",
+              file=sys.stderr)
+        window_days = 7
+    if window_days < 1:
+        print(f"WARN: index_window_days={window_days} が 1 未満です。1日にクリップします。",
+              file=sys.stderr)
+        window_days = 1
+
+    window_dates = dates[:window_days]
+    window_items = []
+    for d in window_dates:
+        window_items.extend(deduped_by_date[d])  # キャッシュから取得
+    window_items = dedup(window_items)
+    index_label = _window_label(window_dates)
+    index_html = _render_edition(env, config, index_label, window_items, order,
+                                 is_latest=True)
+    (PUBLIC / "index.html").write_text(index_html, encoding="utf-8")
 
     # 過去号インデックス
     links = "\n".join(
         f'<li><a href="{d}.html">{_date_label(d)}</a> '
-        f'<span>{len(dedup(by_date[d]))}本</span></li>' for d in dates)
+        f'<span>{len(deduped_by_date[d])}本</span></li>' for d in dates)
     (PUBLIC / "archive" / "index.html").write_text(
         f'<!doctype html><meta charset="utf-8"><title>過去号</title>'
         f'<style>body{{font-family:"Noto Serif JP",serif;max-width:640px;'
