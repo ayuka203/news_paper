@@ -105,7 +105,7 @@
 <div class="sheet">
 
   <header class="masthead">
-    <p class="kicker">Energy · Nuclear · Grid — Regulatory Digest</p>
+    {% if kicker %}<p class="kicker">{{ kicker }}</p>{% endif %}
     <h1 class="title">{{ masthead }}</h1>
     {% if subtitle %}<p class="subtitle">{{ subtitle }}</p>{% endif %}
     <div class="dateline">

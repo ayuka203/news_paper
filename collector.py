@@ -267,8 +267,9 @@ def _render_edition(env, config, date_label, items, order, is_latest):
 
     tmpl = env.get_template("newspaper.html.j2")
     return tmpl.render(
-        masthead=config.get("masthead", "THE GRID DESK"),
+        masthead=config.get("masthead", "DAILY NEWS"),
         subtitle=config.get("subtitle", ""),
+        kicker=config.get("kicker", ""),
         edition_date=date_label,
         sections=sections,
         total=len(items),

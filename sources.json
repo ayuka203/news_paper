@@ -1,6 +1,7 @@
 {
-  "masthead": "THE GRID DESK",
-  "subtitle": "エネルギー・原子力・送配電 規制ダイジェスト",
+  "masthead": "DAILY NEWS",
+  "subtitle": "毎朝の自動編集ニュースダイジェスト",
+  "kicker": "News Digest",
   "section_order": ["規制・政策", "送配電・系統", "原子力", "海外"],
 
   "_メモ": "type: rss=ネイティブRSS / google_news=任意サイトをGoogle News経由でRSS化(query必須) / html=スクレイプ(item_selector必須)。RSSが無い・取得が弾かれる媒体はgoogle_newsが安定。英語媒体は hl/gl/ceid を en に。",
