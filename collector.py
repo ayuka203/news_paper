@@ -173,6 +173,28 @@ def _apply_keywords(items: list[dict], keywords: list[str]) -> list[dict]:
     ]
 
 
+def _apply_url_excludes(items: list[dict], patterns: list[str]) -> list[dict]:
+    """canonical URL に部分一致するパターンを除外する（大文字小文字無視）。空リストならフィルタなし。"""
+    pats = [p.lower() for p in patterns if p]
+    if not pats:
+        return items
+    return [it for it in items if not any(p in it.get("canonical", "").lower() for p in pats)]
+
+
+def _filter_by_age(items: list[dict], max_days: int | None) -> list[dict]:
+    """published 日付が max_days より古いものを除外。published 不明は保持。
+    max_days=None または <=0 はフィルタなし。"""
+    if max_days is None or max_days <= 0:
+        return items
+    cutoff = now_jst() - dt.timedelta(days=max_days)
+    out = []
+    for it in items:
+        d = parse_date(it.get("published"))
+        if d is None or d >= cutoff:
+            out.append(it)
+    return out
+
+
 def collect_all(sources: list[dict]) -> list[dict]:
     items = []
     for src in sources:
@@ -189,6 +211,11 @@ def collect_all(sources: list[dict]) -> list[dict]:
             got = _apply_keywords(got, kw)
             if kw and before != len(got):
                 print(f"    keyword filter: {before} -> {len(got)}", file=sys.stderr)
+            excl = src.get("exclude_url_patterns", [])
+            before = len(got)
+            got = _apply_url_excludes(got, excl)
+            if excl and before != len(got):
+                print(f"    url-exclude: {before} -> {len(got)}", file=sys.stderr)
             items.extend(got)
             print(f"  [{kind:11}] {src['name']}: {len(got)} 件", file=sys.stderr)
         except Exception as ex:  # 1媒体の失敗で全体を止めない
@@ -373,6 +400,17 @@ def main() -> int:
 
     print("収集開始...", file=sys.stderr)
     fetched = collect_all(sources)
+
+    # 鮮度フィルタ: published が古いものは新規として採用しない
+    try:
+        max_age = int(cfg.get("max_age_days", 7))
+    except (TypeError, ValueError):
+        print(f"WARN: max_age_days が無効。7日にフォールバック。", file=sys.stderr)
+        max_age = 7
+    if max_age > 0:
+        before = len(fetched)
+        fetched = _filter_by_age(fetched, max_age)
+        print(f"鮮度フィルタ: {before} -> {len(fetched)} 件 (max_age={max_age}d)", file=sys.stderr)
 
     today = today_str()
     new = []

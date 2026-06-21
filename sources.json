@@ -4,6 +4,7 @@
   "kicker": "News Digest",
   "section_order": ["規制・政策", "送配電・系統", "原子力", "海外"],
   "index_window_days": 7,
+  "max_age_days": 7,
 
   "_メモ": "type: rss=ネイティブRSS / google_news=任意サイトをGoogle News経由でRSS化(query必須) / html=スクレイプ(item_selector必須)。RSSが無い・取得が弾かれる媒体はgoogle_newsが安定。英語媒体は hl/gl/ceid を en に。",
 
@@ -66,7 +67,14 @@
         "発電", "送電", "電気", "電源", "蓄電", "ガス", "LNG", "水素",
         "省エネ", "カーボンニュートラル", "CO2", "GX"
       ],
-      "_note": "Google Newsクエリは緩く、keywordsで二次フィルタ。日経はネイティブRSS無し・有料。Google News経由で見出しとリンクのみ取得"
+      "exclude_url_patterns": [
+        "nikkei.com/tenshoku",
+        "nikkei.com/career",
+        "career.nikkei.com",
+        "nikkei.com/style/job",
+        "nikkei.com/saiyo"
+      ],
+      "_note": "Google Newsクエリは緩く、keywordsで二次フィルタ + URL除外で日経career系を排除"
     }
   ]
 }

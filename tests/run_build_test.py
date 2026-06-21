@@ -95,4 +95,45 @@ idx5 = idx5_path.read_text(encoding="utf-8")
 assert "本日の更新はありません" in idx5, "空入力時に空状態メッセージが表示されていない"
 print("empty input test OK")
 
+# 9) URL 除外テスト
+sample_urls = [
+    {"title": "電力市場の動向", "canonical": "https://www.nikkei.com/article/abc"},
+    {"title": "電力会社で転職", "canonical": "https://www.nikkei.com/tenshoku/xxx"},
+    {"title": "ガス事業", "canonical": "https://career.nikkei.com/yyy"},
+    {"title": "大文字混入", "canonical": "https://www.nikkei.com/Tenshoku/UPPER"},  # 大文字パス
+]
+filtered = C._apply_url_excludes(sample_urls, ["nikkei.com/tenshoku", "career.nikkei.com"])
+assert len(filtered) == 1, f"URL除外結果: {len(filtered)}"
+assert filtered[0]["canonical"].endswith("/article/abc")
+# 空リストは全通過
+assert len(C._apply_url_excludes(sample_urls, [])) == 4
+# 空文字混入も通過
+assert len(C._apply_url_excludes(sample_urls, [""])) == 4
+print("url exclude tests OK")
+
+# 10) 鮮度フィルタ（max_age_days）テスト
+import datetime as _dt
+old_iso = (C.now_jst() - _dt.timedelta(days=14)).isoformat()
+fresh_iso = (C.now_jst() - _dt.timedelta(days=2)).isoformat()
+sample_age = [
+    {"title": "old", "published": old_iso},
+    {"title": "fresh", "published": fresh_iso},
+    {"title": "nodate", "published": ""},  # 不明は保持
+]
+filtered = C._filter_by_age(sample_age, 7)
+titles = [it["title"] for it in filtered]
+assert "fresh" in titles and "nodate" in titles, f"フィルタ結果: {titles}"
+assert "old" not in titles, "14日前の記事が残っている"
+# max_days <= 0 はフィルタなし
+assert len(C._filter_by_age(sample_age, 0)) == 3
+assert len(C._filter_by_age(sample_age, None)) == 3
+# days=7 ちょうど → cutoff = now - 7d、d >= cutoff で保持される（境界包含）
+exactly_iso = (C.now_jst() - _dt.timedelta(days=7) + _dt.timedelta(seconds=1)).isoformat()
+sample_edge = [
+    {"title": "exactly7", "published": exactly_iso},
+]
+assert len(C._filter_by_age(sample_edge, 7)) == 1, "days=7境界の記事が消えている"
+print("age filter boundary test OK")
+print("age filter tests OK")
+
 print("ALL OK")
