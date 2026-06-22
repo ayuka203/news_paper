@@ -67,6 +67,7 @@
         "発電", "送電", "電気", "電源", "蓄電", "ガス", "LNG", "水素",
         "省エネ", "カーボンニュートラル", "CO2", "GX"
       ],
+      "max_age_days": 1,
       "exclude_url_patterns": [
         "nikkei.com/tenshoku",
         "nikkei.com/career",

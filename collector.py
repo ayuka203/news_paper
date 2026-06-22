@@ -216,6 +216,19 @@ def collect_all(sources: list[dict]) -> list[dict]:
             got = _apply_url_excludes(got, excl)
             if excl and before != len(got):
                 print(f"    url-exclude: {before} -> {len(got)}", file=sys.stderr)
+            src_age_raw = src.get("max_age_days")
+            try:
+                src_age = int(src_age_raw) if src_age_raw is not None else None
+            except (TypeError, ValueError):
+                print(f"    WARN: max_age_days='{src_age_raw}' は無効。このソースでは適用しません。", file=sys.stderr)
+                src_age = None
+            if src_age is not None and src_age > 0:
+                before = len(got)
+                got = _filter_by_age(got, src_age)
+                for it in got:
+                    it["_age_done"] = True  # main の global filter をスキップ
+                if before != len(got):
+                    print(f"    per-source age filter ({src_age}d): {before} -> {len(got)}", file=sys.stderr)
             items.extend(got)
             print(f"  [{kind:11}] {src['name']}: {len(got)} 件", file=sys.stderr)
         except Exception as ex:  # 1媒体の失敗で全体を止めない
@@ -370,6 +383,15 @@ def build_site(all_items: list[dict], sources: list[dict], config: dict) -> None
     for d in window_dates:
         window_items.extend(deduped_by_date[d])  # キャッシュから取得
     window_items = dedup(window_items)
+    try:
+        display_max_age = int(config.get("max_age_days", 7))
+    except (TypeError, ValueError):
+        display_max_age = 7
+    if display_max_age > 0:
+        before = len(window_items)
+        window_items = _filter_by_age(window_items, display_max_age)
+        if before != len(window_items):
+            print(f"index display age filter: {before} -> {len(window_items)}", file=sys.stderr)
     index_label = _window_label(window_dates)
     index_html = _render_edition(env, config, index_label, window_items, order,
                                  is_latest=True)
@@ -409,8 +431,19 @@ def main() -> int:
         max_age = 7
     if max_age > 0:
         before = len(fetched)
-        fetched = _filter_by_age(fetched, max_age)
-        print(f"鮮度フィルタ: {before} -> {len(fetched)} 件 (max_age={max_age}d)", file=sys.stderr)
+        cutoff = now_jst() - dt.timedelta(days=max_age)
+        out = []
+        pre = 0
+        for it in fetched:
+            if it.pop("_age_done", False):
+                out.append(it)
+                pre += 1
+                continue
+            d = parse_date(it.get("published"))
+            if d is None or d >= cutoff:
+                out.append(it)
+        fetched = out
+        print(f"鮮度フィルタ: {before} -> {len(fetched)} 件 (max_age={max_age}d, per-source pre-filtered: {pre})", file=sys.stderr)
 
     today = today_str()
     new = []
