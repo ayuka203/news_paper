@@ -392,6 +392,40 @@ def build_site(all_items: list[dict], sources: list[dict], config: dict) -> None
         window_items = _filter_by_age(window_items, display_max_age)
         if before != len(window_items):
             print(f"index display age filter: {before} -> {len(window_items)}", file=sys.stderr)
+
+    # Per-source max_age_days を表示時にも適用（global フィルタの後に積み重ねる）
+    src_overrides: dict[str, int] = {}
+    for s in sources:
+        age_raw = s.get("max_age_days")
+        if age_raw is None:
+            continue
+        try:
+            age = int(age_raw)
+        except (TypeError, ValueError):
+            continue
+        if age > 0:
+            src_overrides[s["name"]] = age
+
+    if src_overrides:
+        before = len(window_items)
+        cutoffs = {
+            name: now_jst() - dt.timedelta(days=days)
+            for name, days in src_overrides.items()
+        }
+        kept = []
+        for it in window_items:
+            cutoff = cutoffs.get(it.get("source"))
+            if cutoff is None:
+                kept.append(it)  # per-source 設定なし → そのまま通す
+                continue
+            d = parse_date(it.get("published"))
+            if d is None or d >= cutoff:
+                kept.append(it)
+        window_items = kept
+        if before != len(window_items):
+            print(f"index per-source display age filter: {before} -> {len(window_items)}",
+                  file=sys.stderr)
+
     index_label = _window_label(window_dates)
     index_html = _render_edition(env, config, index_label, window_items, order,
                                  is_latest=True)

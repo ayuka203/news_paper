@@ -203,4 +203,27 @@ if src_age is not None and src_age > 0:
 assert not any("_age_done" in it for it in got), "max_age_days=0 で _age_done が付与されている"
 print("max_age_days=0 guard test OK")
 
+# 14) per-source max_age_days が表示時にも効く
+import shutil, datetime as _dt
+shutil.rmtree(Path(C.ROOT)/"public", ignore_errors=True)
+src_nikkei_name = "日本経済新聞"  # sources.json の max_age_days=1 のソース名
+nikkei_old_pub = (C.now_jst() - _dt.timedelta(days=3)).isoformat()
+nikkei_fresh_pub = (C.now_jst() - _dt.timedelta(hours=10)).isoformat()
+other_pub = (C.now_jst() - _dt.timedelta(days=3)).isoformat()  # 3日前、global 7日窓では通過
+# タイトルは dedup の類似度しきい値(0.82)を超えないよう十分に異なる文字列にする
+disp_per_src = [
+    {"title":"脱炭素政策の動向について詳細解説","url":"https://nikkei.com/o","canonical":"https://nikkei.com/o",
+     "source":src_nikkei_name,"section":"規制・政策","published":nikkei_old_pub,"first_seen":_d1},
+    {"title":"再エネ電力の系統接続費用が焦点","url":"https://nikkei.com/n","canonical":"https://nikkei.com/n",
+     "source":src_nikkei_name,"section":"規制・政策","published":nikkei_fresh_pub,"first_seen":_d1},
+    {"title":"電力市場改革の最新論点を整理","url":"https://other.com/x","canonical":"https://other.com/x",
+     "source":"他社","section":"規制・政策","published":other_pub,"first_seen":_d1},
+]
+C.build_site(disp_per_src, cfg["sources"], cfg)
+idx_per_src = (Path(C.ROOT)/"public"/"index.html").read_text(encoding="utf-8")
+assert "再エネ電力の系統接続費用が焦点" in idx_per_src, "Nikkei 新しい記事が表示されていない"
+assert "脱炭素政策の動向について詳細解説" not in idx_per_src, "per-source 表示時フィルタが効かず Nikkei 古い記事が表示されている"
+assert "電力市場改革の最新論点を整理" in idx_per_src, "per-source 設定なしソースが誤って弾かれている"
+print("per-source display-time age filter test OK")
+
 print("ALL OK")
