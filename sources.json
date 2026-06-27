@@ -52,6 +52,13 @@
       "_note": "ネイティブRSSは https://journal.meti.go.jp/new-rss/ 記載のURLに差し替え可"
     },
     {
+      "name": "電力・ガス取引監視等委員会",
+      "type": "google_news",
+      "query": "site:egc.meti.go.jp",
+      "section": "規制・政策",
+      "_note": "EGC（METI配下の電力・ガス市場監視委員会）。ネイティブRSSなし、Google News経由が安定。月1〜3件"
+    },
+    {
       "name": "電気新聞",
       "type": "google_news",
       "query": "site:denkishimbun.com",
