@@ -181,6 +181,17 @@ def _apply_url_excludes(items: list[dict], patterns: list[str]) -> list[dict]:
     return [it for it in items if not any(p in it.get("canonical", "").lower() for p in pats)]
 
 
+def _apply_title_excludes(items: list[dict], patterns: list[str]) -> list[dict]:
+    """タイトルに部分一致するパターンを除外する（大文字小文字無視・NFC正規化）。空リストならフィルタなし。"""
+    pats = [unicodedata.normalize("NFC", p).lower() for p in patterns if p]
+    if not pats:
+        return items
+    return [
+        it for it in items
+        if not any(p in unicodedata.normalize("NFC", it.get("title", "")).lower() for p in pats)
+    ]
+
+
 def _filter_by_age(items: list[dict], max_days: int | None) -> list[dict]:
     """published 日付が max_days より古いものを除外。published 不明は保持。
     max_days=None または <=0 はフィルタなし。"""
@@ -216,6 +227,11 @@ def collect_all(sources: list[dict]) -> list[dict]:
             got = _apply_url_excludes(got, excl)
             if excl and before != len(got):
                 print(f"    url-exclude: {before} -> {len(got)}", file=sys.stderr)
+            excl_titles = src.get("exclude_title_patterns", [])
+            before = len(got)
+            got = _apply_title_excludes(got, excl_titles)
+            if excl_titles and before != len(got):
+                print(f"    title-exclude: {before} -> {len(got)}", file=sys.stderr)
             src_age_raw = src.get("max_age_days")
             try:
                 src_age = int(src_age_raw) if src_age_raw is not None else None

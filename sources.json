@@ -82,7 +82,10 @@
         "nikkei.com/style/job",
         "nikkei.com/saiyo"
       ],
-      "_note": "Google Newsクエリは緩く、keywordsで二次フィルタ + URL除外で日経career系を排除"
+      "exclude_title_patterns": [
+        "（人事・素材・エネルギー）"
+      ],
+      "_note": "Google Newsクエリは緩く、keywordsで二次フィルタ + URL除外で日経career系を排除 + タイトル除外で人事情報記事を排除"
     }
   ]
 }

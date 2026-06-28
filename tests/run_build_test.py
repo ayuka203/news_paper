@@ -226,4 +226,34 @@ assert "脱炭素政策の動向について詳細解説" not in idx_per_src, "p
 assert "電力市場改革の最新論点を整理" in idx_per_src, "per-source 設定なしソースが誤って弾かれている"
 print("per-source display-time age filter test OK")
 
+# 15) タイトル除外（exclude_title_patterns）テスト
+sample_titles = [
+    {"title": "電力市場の動向"},
+    {"title": "（人事・素材・エネルギー）原子燃料工業"},
+    {"title": "ガス事業について"},
+    {"title": "(人事・素材・エネルギー)三谷産業"},  # 半角カッコは別件、これは通過
+]
+filtered = C._apply_title_excludes(sample_titles, ["（人事・素材・エネルギー）"])
+titles = [it["title"] for it in filtered]
+assert "電力市場の動向" in titles
+assert "（人事・素材・エネルギー）原子燃料工業" not in titles
+assert "ガス事業について" in titles
+assert "(人事・素材・エネルギー)三谷産業" in titles, "半角カッコは別パターンなので通過するはず"
+# 空リスト → 全通過
+assert len(C._apply_title_excludes(sample_titles, [])) == 4
+# 空文字混入 → 無視
+assert len(C._apply_title_excludes(sample_titles, [""])) == 4
+# 大文字小文字無視
+assert len(C._apply_title_excludes(
+    [{"title": "ABC company news"}], ["abc company"]
+)) == 0
+# NFC 正規化（合成済み vs 分解形）
+import unicodedata as _u
+decomposed_title = _u.normalize("NFD", "がんばろう")
+filtered_nfc = C._apply_title_excludes(
+    [{"title": decomposed_title}], ["がんばろう"]
+)
+assert len(filtered_nfc) == 0, "NFC正規化で分解形タイトルが除外されない"
+print("title exclude tests OK")
+
 print("ALL OK")
