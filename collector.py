@@ -13,6 +13,7 @@ from urllib.parse import urlparse, urlunparse, parse_qsl, urlencode
 
 import requests
 import feedparser
+import markdown as md_lib
 from bs4 import BeautifulSoup
 from dateutil import parser as dtparser
 from jinja2 import Environment, FileSystemLoader, select_autoescape
@@ -252,6 +253,37 @@ def collect_all(sources: list[dict]) -> list[dict]:
     return items
 
 
+# ---------------------------------------------------------------- stock watch
+def fetch_stock_report(config: dict) -> str | None:
+    """stock-price-checker リポジトリの当日分レポート(Markdown)を取得する。
+
+    当日分が無ければ前日分にフォールバックし、それも無ければ None を返し
+    (呼び出し側で節ごと省略する)。1媒体扱いなので取得失敗で全体は止めない。
+    """
+    sw = config.get("stock_watch") or {}
+    if not sw.get("enabled"):
+        return None
+    repo = sw.get("repo", "")
+    branch = sw.get("branch", "main")
+    if not repo:
+        return None
+    for days_back in range(4):  # 週末・祝日で数日空くケースに備えて直近4日分まで遡る
+        d = (now_jst() - dt.timedelta(days=days_back)).strftime("%Y-%m-%d")
+        url = f"https://raw.githubusercontent.com/{repo}/{branch}/reports/{d}.md"
+        try:
+            r = requests.get(url, headers={"User-Agent": UA}, timeout=HTTP_TIMEOUT)
+            if r.status_code == 200 and r.text.strip():
+                return r.text
+        except Exception as ex:
+            print(f"  [ERR ] stock_watch fetch ({d}): {ex}", file=sys.stderr)
+    return None
+
+
+def render_stock_html(report_md: str) -> str:
+    """レポート Markdown (見出し + テーブル) を HTML 断片に変換する。"""
+    return md_lib.markdown(report_md, extensions=["tables"])
+
+
 # ---------------------------------------------------------------- state / diff
 def load_state() -> dict:
     if STATE_FILE.exists():
@@ -299,7 +331,7 @@ def _section_order(sources: list[dict], config: dict) -> list[str]:
     return order
 
 
-def _render_edition(env, config, date_label, items, order, is_latest):
+def _render_edition(env, config, date_label, items, order, is_latest, stock_html=None):
     by_sec: dict[str, dict[str, list]] = {}
     for raw in items:
         it = dict(raw)  # シャローコピーで元 dict の汚染を防ぐ
@@ -331,6 +363,7 @@ def _render_edition(env, config, date_label, items, order, is_latest):
         sections=sections,
         total=len(items),
         is_latest=is_latest,
+        stock_html=stock_html,
         generated=now_jst().strftime("%Y-%m-%d %H:%M JST"),
     )
 
@@ -359,7 +392,8 @@ def _window_label(window_dates: list[str]) -> str:
     return f"{_date_label(start)} 〜 {_date_label(end)}"
 
 
-def build_site(all_items: list[dict], sources: list[dict], config: dict) -> None:
+def build_site(all_items: list[dict], sources: list[dict], config: dict,
+               stock_report_md: str | None = None) -> None:
     PUBLIC.mkdir(exist_ok=True)
     (PUBLIC / "archive").mkdir(exist_ok=True)
     (PUBLIC / ".nojekyll").write_text("")
@@ -442,9 +476,16 @@ def build_site(all_items: list[dict], sources: list[dict], config: dict) -> None
             print(f"index per-source display age filter: {before} -> {len(window_items)}",
                   file=sys.stderr)
 
+    stock_html = None
+    if stock_report_md:
+        try:
+            stock_html = render_stock_html(stock_report_md)
+        except Exception as ex:
+            print(f"  [ERR ] stock_watch render: {ex}", file=sys.stderr)
+
     index_label = _window_label(window_dates)
     index_html = _render_edition(env, config, index_label, window_items, order,
-                                 is_latest=True)
+                                 is_latest=True, stock_html=stock_html)
     (PUBLIC / "index.html").write_text(index_html, encoding="utf-8")
 
     # 過去号インデックス
@@ -517,7 +558,11 @@ def main() -> int:
     STATE_FILE.write_text(json.dumps(state, ensure_ascii=False, indent=0),
                           encoding="utf-8")
 
-    build_site(archive, sources, config)
+    print("stock-watch レポート取得...", file=sys.stderr)
+    stock_report_md = fetch_stock_report(config)
+    print(f"  stock_watch: {'取得済み' if stock_report_md else '該当なし/取得失敗'}", file=sys.stderr)
+
+    build_site(archive, sources, config, stock_report_md=stock_report_md)
     print("public/ を再生成しました。", file=sys.stderr)
     return 0
 

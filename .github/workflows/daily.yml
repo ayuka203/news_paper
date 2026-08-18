@@ -2,7 +2,7 @@ name: daily-newspaper
 
 on:
   schedule:
-    - cron: "0 22 * * *"   # 07:00 JST (UTC+9) 毎日
+    - cron: "0 23 * * *"   # 08:00 JST (UTC+9) 毎日。stock-price-checker の07:30 JST実行より後にして当日分レポートを拾えるようにする
   workflow_dispatch: {}
 
 permissions:

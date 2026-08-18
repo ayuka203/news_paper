@@ -92,6 +92,18 @@
   .empty{text-align:center; color:var(--muted); padding:3rem 0;
          font-size:1.1rem; letter-spacing:.1em}
 
+  /* ---- stock watch ---- */
+  .stock-watch{margin-top:2.6rem}
+  .stock-watch table{width:100%; border-collapse:collapse; margin:0 0 1.2rem;
+                      font-size:.82rem}
+  .stock-watch th,.stock-watch td{padding:.35rem .6rem; text-align:left;
+                                   border-bottom:1px dotted var(--rule)}
+  .stock-watch th{color:var(--accent); font-weight:600; letter-spacing:.04em;
+                   border-bottom:1px solid var(--hair)}
+  .stock-watch h2{font-size:1rem; letter-spacing:.06em; margin:1.6rem 0 .4rem}
+  .stock-watch h2:first-of-type{margin-top:0}
+  .stock-watch h1{display:none} /* レポート本体の "# stock-watch レポート ..." は section-head で代替 */
+
   footer{margin-top:2.6rem; border-top:3px double var(--hair);
          padding-top:.7rem; display:flex; justify-content:space-between;
          font-size:.64rem; letter-spacing:.12em; text-transform:uppercase;
@@ -139,6 +151,13 @@
   </section>
   {% endif %}
   {% endfor %}
+
+  {% if stock_html %}
+  <section class="section stock-watch">
+    <div class="section-head"><span>Stock Watch</span></div>
+    {{ stock_html | safe }}
+  </section>
+  {% endif %}
 
   <footer>
     <span>{{ generated }} 生成</span>

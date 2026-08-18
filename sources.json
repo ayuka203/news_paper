@@ -6,6 +6,13 @@
   "index_window_days": 7,
   "max_age_days": 7,
 
+  "stock_watch": {
+    "enabled": true,
+    "repo": "ayuka203/stock-price-checker",
+    "branch": "main",
+    "_note": "reports/{当日 or 前日}.md を raw.githubusercontent.com から取得し index.html 末尾に描画。取得失敗時は節ごと省略"
+  },
+
   "_メモ": "type: rss=ネイティブRSS / google_news=任意サイトをGoogle News経由でRSS化(query必須) / html=スクレイプ(item_selector必須)。RSSが無い・取得が弾かれる媒体はgoogle_newsが安定。英語媒体は hl/gl/ceid を en に。",
 
   "sources": [
