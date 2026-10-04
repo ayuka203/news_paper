@@ -72,3 +72,14 @@ RSSが無い／自動取得が弾かれる媒体は **Google News** を経由し
 - ネイティブRSSのURL（Oxford等）が変わっていると0件になります。Actionsのログで各媒体の取得件数が出るので、0件の媒体は `query`/`url` を調整してください。
 - Google News は大量・高頻度アクセスでレート制限がかかる場合あり。日次・低頻度なら問題ありません。
 - 政府系サイトを直接スクレイプ（type:html）する場合は各サイトの利用規約・robotsに従ってください。本構成は極力RSS/Google News経由にしています。
+
+## Market Pulse（株価と見出しの紐付け）
+`sources.json` の `stock_watch` で指定した別リポジトリ（stock-price-checker）の `reports/YYYY-MM-DD.json`（schema_version=1）を取得し、
+index.html 末尾に「Market Pulse」節として描画します。目立った動きの銘柄は、各銘柄の `keywords` と index に載る記事タイトルを照合し、関連見出しを最大2件紐付けます。
+JSON が不正（schema_version 違い・型不正など）または取得できない場合は節ごと省略します。
+
+ローカルプレビュー（`data/` は変更されません）:
+```
+STOCK_WATCH_LOCAL_JSON=tests/fixtures/stock_report_sample.json python tests/preview_site.py
+# -> public/index.html を開く（週次表示は stock_report_sample_weekly.json）
+```

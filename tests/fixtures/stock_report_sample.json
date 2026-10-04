@@ -1,0 +1,173 @@
+{
+  "schema_version": 1,
+  "report_date": "2026-10-05",
+  "edition": "daily",
+  "asof": {
+    "JP": "2026-10-02",
+    "US": "2026-10-02",
+    "JP_stale": false,
+    "US_stale": true
+  },
+  "headline": "送配電・計測が上昇（平均+5.2%）、原子力燃料・関連素材は下落（平均-3.1%）",
+  "themes": [
+    {
+      "name": "送配電・計測",
+      "layer": "universe",
+      "daily_pct": 0.052,
+      "weekly_pct": 0.11,
+      "n": 4
+    },
+    {
+      "name": "原子力・放射線規制",
+      "layer": "watchlist",
+      "daily_pct": 0.002,
+      "weekly_pct": -0.012,
+      "n": 3
+    },
+    {
+      "name": "原子力燃料・関連素材",
+      "layer": "universe",
+      "daily_pct": -0.031,
+      "weekly_pct": null,
+      "n": 2
+    }
+  ],
+  "movers": [
+    {
+      "symbol": "5801.T",
+      "label": "古河電気工業",
+      "theme": "送配電・計測",
+      "close": 4458.0,
+      "daily_pct": 0.084,
+      "weekly_pct": 0.165,
+      "z": 3.1,
+      "flags": [
+        "52w_high"
+      ],
+      "keywords": [
+        "古河電工",
+        "古河電気工業"
+      ]
+    },
+    {
+      "symbol": "6503.T",
+      "label": "三菱電機",
+      "theme": "送配電・計測",
+      "close": 2890.5,
+      "daily_pct": 0.041,
+      "weekly_pct": 0.07,
+      "z": 2.2,
+      "flags": [
+        "volume_spike"
+      ],
+      "keywords": [
+        "三菱電機"
+      ]
+    },
+    {
+      "symbol": "CCJ",
+      "label": "Cameco",
+      "theme": "原子力燃料・関連素材",
+      "close": 71.25,
+      "daily_pct": -0.062,
+      "weekly_pct": -0.03,
+      "z": -2.6,
+      "flags": [
+        "52w_low"
+      ],
+      "keywords": [
+        "Cameco",
+        "ウラン"
+      ]
+    }
+  ],
+  "macro": [
+    {
+      "symbol": "CL=F",
+      "label": "WTI原油",
+      "close": 91.11,
+      "daily_pct": -0.004,
+      "weekly_pct": 0.02,
+      "asof": "2026-10-02"
+    },
+    {
+      "symbol": "JPY=X",
+      "label": "ドル円",
+      "close": 149.87,
+      "daily_pct": 0.0012,
+      "weekly_pct": null,
+      "asof": "2026-10-02"
+    },
+    {
+      "symbol": "^TNX",
+      "label": "米10年債利回り",
+      "close": 4.2,
+      "daily_pct": 0.0,
+      "weekly_pct": 0.01,
+      "asof": "2026-10-02"
+    }
+  ],
+  "tickers": [
+    {
+      "symbol": "5801.T",
+      "label": "古河電気工業",
+      "theme": "送配電・計測",
+      "layer": "universe",
+      "close": 4458.0,
+      "daily_pct": 0.084,
+      "weekly_pct": 0.165,
+      "z": 3.1,
+      "flags": [
+        "52w_high"
+      ],
+      "asof": "2026-10-02",
+      "stale": false
+    },
+    {
+      "symbol": "6503.T",
+      "label": "三菱電機",
+      "theme": "送配電・計測",
+      "layer": "universe",
+      "close": 2890.5,
+      "daily_pct": 0.041,
+      "weekly_pct": 0.07,
+      "z": 2.2,
+      "flags": [
+        "volume_spike"
+      ],
+      "asof": "2026-10-02",
+      "stale": false
+    },
+    {
+      "symbol": "7011.T",
+      "label": "三菱重工",
+      "theme": "原子力・放射線規制",
+      "layer": "watchlist",
+      "close": 3849.0,
+      "daily_pct": 0.002,
+      "weekly_pct": -0.012,
+      "z": 0.1,
+      "flags": [],
+      "asof": "2026-10-02",
+      "stale": false
+    },
+    {
+      "symbol": "CCJ",
+      "label": "Cameco",
+      "theme": "原子力燃料・関連素材",
+      "layer": "universe",
+      "close": 71.25,
+      "daily_pct": -0.062,
+      "weekly_pct": -0.03,
+      "z": -2.6,
+      "flags": [
+        "52w_low"
+      ],
+      "asof": "2026-10-01",
+      "stale": true
+    }
+  ],
+  "fetch_failures": [
+    "XYZ.T"
+  ]
+}

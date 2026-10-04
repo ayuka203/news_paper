@@ -10,7 +10,7 @@
     "enabled": true,
     "repo": "ayuka203/stock-price-checker",
     "branch": "main",
-    "_note": "reports/{当日 or 前日}.md を raw.githubusercontent.com から取得し index.html 末尾に描画。取得失敗時は節ごと省略"
+    "_note": "reports/{当日〜3日前}.json (schema_version=1) を raw.githubusercontent.com から取得し、記事見出しと照合して index.html 末尾に Market Pulse 節として描画。取得失敗・スキーマ不正時は節ごと省略。環境変数 STOCK_WATCH_LOCAL_JSON でローカルJSONを代わりに読める(プレビュー用)"
   },
 
   "_メモ": "type: rss=ネイティブRSS / google_news=任意サイトをGoogle News経由でRSS化(query必須) / html=スクレイプ(item_selector必須)。RSSが無い・取得が弾かれる媒体はgoogle_newsが安定。英語媒体は hl/gl/ceid を en に。",
