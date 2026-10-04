@@ -100,8 +100,10 @@ def collect_rss(src: dict) -> list[dict]:
             so = e.get("source")
             if isinstance(so, dict) and so.get("title"):
                 source_name = so["title"]
-        out.append(_item(src, title, link,
-                         e.get("published") or e.get("updated") or "", source_name))
+        item = _item(src, title, link,
+                     e.get("published") or e.get("updated") or "", source_name)
+        if item is not None:
+            out.append(item)
     return out
 
 
@@ -145,16 +147,24 @@ def collect_html(src: dict) -> list[dict]:
             dn = node.select_one(src["date_selector"])
             if dn:
                 published = dn.get_text(" ", strip=True)
-        out.append(_item(src, title, href, published))
+        item = _item(src, title, href, published)
+        if item is not None:
+            out.append(item)
     return out
 
 
 def _item(src: dict, title: str, url: str, published: str,
-          source_name: str | None = None) -> dict:
+          source_name: str | None = None) -> dict | None:
+    """記事 dict を作る。URL が http/https でない（javascript: 等）場合は WARN を出して None。"""
+    safe = _safe_http_url(url)
+    if safe is None:
+        print(f"  [WARN] {src.get('name', '?')}: 非http(s)のURLの記事を除外: {str(url)[:80]!r}",
+              file=sys.stderr)
+        return None
     return {
         "title": title,
-        "url": url,
-        "canonical": canonical_url(url),
+        "url": safe,
+        "canonical": canonical_url(safe),
         "source": source_name or src["name"],
         "section": src.get("section", "ニュース"),
         "published": published,
@@ -664,6 +674,7 @@ def _render_edition(env, config, date_label, items, order, is_latest, stock=None
     by_sec: dict[str, dict[str, list]] = {}
     for raw in items:
         it = dict(raw)  # シャローコピーで元 dict の汚染を防ぐ
+        it["url"] = _safe_http_url(it.get("url"))  # 不正スキームは None（テンプレート側でリンクなしにする）
         d = parse_date(it.get("published"))
         it["_sort"] = d.timestamp() if d else 0
         it["date_display"] = f"{d.month}月{d.day}日" if d else ""

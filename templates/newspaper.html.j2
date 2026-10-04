@@ -183,7 +183,7 @@
         <div class="source-arts">
           {% for a in grp.arts %}
           <article class="art">
-            <p class="hl"><a href="{{ a.url }}" target="_blank" rel="noopener">{{ a.title }}</a></p>
+            <p class="hl">{% if a.url %}<a href="{{ a.url }}" target="_blank" rel="noopener">{{ a.title }}</a>{% else %}{{ a.title }}{% endif %}</p>
             {% if a.date_display %}<p class="meta">{{ a.date_display }}</p>{% endif %}
           </article>
           {% endfor %}

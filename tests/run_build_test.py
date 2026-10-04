@@ -723,4 +723,127 @@ assert not hasattr(C, "md_lib") and not hasattr(C, "render_stock_html")
 assert "markdown" not in (Path(C.ROOT)/"requirements.txt").read_text(encoding="utf-8").lower()
 print("no markdown dependency OK")
 
+# 28) 記事URLのスキーム検証（javascript: 等は href に出さない / 取り込み時にも除外）
+import re as _re
+_bad_urls = [
+    "javascript:alert(1)",
+    "data:text/html,<script>alert(1)</script>",
+    "JaVaScRiPt:alert(1)",
+    "  javascript:alert(1)",
+    "vbscript:msgbox(1)",
+]
+# タイトルは dedup の類似度しきい値を超えないよう、全記事で互いに十分異なる文字列にする
+_titles_by_day = {
+    _d1: ["洋上風力の入札制度を見直し", "蓄電池の系統接続が急増", "需給調整市場の約定価格が下落",
+          "水素混焼発電の実証が開始", "送電線の増強計画を公表"],
+    _d2: ["原子力規制委が審査会合を開催", "地熱発電の新規開発が決定", "電気料金の補助金が延長へ",
+          "デマンドレスポンスの参加者募集", "容量市場の応札結果を発表"],
+}
+_good_by_day = {
+    _d1: [("正常なhttp記事:燃料価格の推移", "http://ok.jp/h1"), ("正常なhttps記事:再エネ賦課金の単価", "https://ok.jp/s1")],
+    _d2: [("正常なhttp記事:LNG調達の多角化", "http://ok.jp/h2"), ("正常なhttps記事:配電事業者の参入動向", "https://ok.jp/s2")],
+}
+
+
+def _mk_url_arts(day):
+    arts = []
+    for i, (t, u) in enumerate(zip(_titles_by_day[day], _bad_urls)):
+        arts.append({"title": t, "url": u, "canonical": f"https://bad.jp/{day}/{i}",
+                     "source": "X", "section": "規制・政策", "published": _pub(3), "first_seen": day})
+    for t, u in _good_by_day[day]:
+        arts.append({"title": t, "url": u, "canonical": u,
+                     "source": "X", "section": "規制・政策", "published": _pub(3), "first_seen": day})
+    return arts
+
+
+def _article_hrefs(html):
+    return [h.strip().lower() for h in _re.findall(r'<p class="hl"><a href="([^"]*)"', html)]
+
+
+# 新しい日(index と archive に載る)と過去号用の日(index と archive に載る)の両方に不正URLを入れる
+_url_arts = _mk_url_arts(_d1) + _mk_url_arts(_d2)
+_url_arts_before = copy.deepcopy(_url_arts)
+shutil.rmtree(Path(C.ROOT)/"public", ignore_errors=True)
+C.build_site(_url_arts, cfg["sources"], cfg)
+assert _url_arts == _url_arts_before, "描画が呼び出し元の記事 dict を変更している"
+_pub_dir = Path(C.ROOT)/"public"
+# (ページ名, HTML, そのページに載るべき日)
+_pages = [
+    ("index", (_pub_dir/"index.html").read_text(encoding="utf-8"), [_d1, _d2]),
+    ("archive d1", (_pub_dir/"archive"/f"{_d1}.html").read_text(encoding="utf-8"), [_d1]),
+    ("archive d2", (_pub_dir/"archive"/f"{_d2}.html").read_text(encoding="utf-8"), [_d2]),
+]
+for _name, _h, _days in _pages:
+    _hs = _article_hrefs(_h)
+    assert len(_hs) == 2 * len(_days), f"{_name}: 正常URLのリンク数が想定外: {_hs}"
+    assert all(h.startswith(("http://", "https://")) for h in _hs), f"{_name}: 非httpのhrefがある: {_hs}"
+    for _payload in ("javascript:", "vbscript:", "alert(1)", "msgbox(1)", "text/html,"):
+        assert _payload not in _h.lower(), f"{_name}: {_payload} が出力に残っている"
+    for _day in _days:
+        for _t in _titles_by_day[_day]:
+            assert f'<p class="hl">{_t}</p>' in _h, f"{_name}: 「{_t}」がリンクなしのプレーンテキストになっていない"
+        for _t, _u in _good_by_day[_day]:
+            assert f'<p class="hl"><a href="{_u}" target="_blank" rel="noopener">{_t}</a></p>' in _h, f"{_name}: 正常URL「{_t}」がリンクでない"
+print("render-time url scheme sanitize OK")
+
+# アーカイブ済みデータの異常値: URL が str でない / 属性を壊す引用符入りの http URL
+_quote_url = 'https://ok.example/a"onmouseover="alert(1)'
+_odd_arts = [
+    {"title": "数値型のリンク情報を持つ記事", "url": 42, "canonical": "https://odd.jp/num",
+     "source": "X", "section": "規制・政策", "published": _pub(3), "first_seen": _d1},
+    {"title": "リンク項目が欠けた蓄電所の話題", "canonical": "https://odd.jp/none",
+     "source": "X", "section": "規制・政策", "published": _pub(3), "first_seen": _d1},
+    {"title": "洋上風力の入札結果を公表", "url": _quote_url, "canonical": "https://odd.jp/quote",
+     "source": "X", "section": "規制・政策", "published": _pub(3), "first_seen": _d1},
+]
+shutil.rmtree(Path(C.ROOT)/"public", ignore_errors=True)
+C.build_site(_odd_arts, cfg["sources"], cfg)
+for _h in ((_pub_dir/"index.html").read_text(encoding="utf-8"),
+           (_pub_dir/"archive"/f"{_d1}.html").read_text(encoding="utf-8")):
+    assert '<p class="hl">数値型のリンク情報を持つ記事</p>' in _h
+    assert '<p class="hl">リンク項目が欠けた蓄電所の話題</p>' in _h
+    # autoescape が効いている: 引用符は &#34; になり、生の onmouseover=" は出力に現れない
+    assert 'onmouseover="' not in _h, "引用符がエスケープされず属性が壊れている"
+    assert '<a href="https://ok.example/a&#34;onmouseover=&#34;alert(1)"' in _h
+print("odd url type / quote escape OK")
+
+# 取り込み時: _item が不正URLを None にし（WARN 出力）、正常URLはそのまま通す
+_src = {"name": "テスト媒体", "section": "規制・政策"}
+_more_bad = ["http:evil.com", "//evil.com", "https:/\\evil", "java\tscript:alert(1)", "", None,
+             "\x00javascript:alert(1)", "\x01javascript:alert(1)", "　javascript:alert(1)",
+             "ｊａｖａｓｃｒｉｐｔ：alert(1)",  # 全角 javascript：
+             "&#106;avascript:alert(1)"]  # HTML実体参照は URL としては scheme なし
+for _u in _bad_urls + _more_bad:
+    with contextlib.redirect_stderr(io.StringIO()) as _eb:
+        assert C._item(_src, "t", _u, "") is None, repr(_u)
+    assert "[WARN]" in _eb.getvalue() and "テスト媒体" in _eb.getvalue()
+_ok = C._item(_src, "t", "  https://ok.jp/a/?utm_source=x  ", "")
+assert _ok["url"] == "https://ok.jp/a/?utm_source=x" and _ok["canonical"] == "https://ok.jp/a"
+
+# collect_rss / collect_html は不正URLの記事だけを落とし、他は残す
+class _Feed:
+    entries = ([{"title": f"rss不正{i}", "link": u} for i, u in enumerate(_bad_urls)]
+               + [{"title": "rss正常", "link": "https://ok.jp/r"}])
+_real_http_get, _real_parse = C.http_get, C.feedparser.parse
+class _Resp:
+    content = b""
+    text = ("<ul><li><a href='https://ok.jp/h1'>html正常</a></li>"
+            "<li><a href='http:evil.jp/x'>html不正</a></li>"
+            "<li><a href='javascript:alert(1)'>htmlJS</a></li></ul>")
+try:
+    C.http_get = lambda url: _Resp()
+    C.feedparser.parse = lambda *a, **k: _Feed()
+    with contextlib.redirect_stderr(io.StringIO()) as _eb:
+        _rss = C.collect_rss({"name": "R", "url": "https://r.jp/feed"})
+        _htm = C.collect_html({"name": "H", "url": "https://h.jp/list", "item_selector": "li"})
+finally:
+    C.http_get, C.feedparser.parse = _real_http_get, _real_parse
+assert [i["title"] for i in _rss] == ["rss正常"], _rss
+assert all(i["url"].startswith(("http://", "https://")) for i in _htm)
+assert "html正常" in [i["title"] for i in _htm] and "html不正" not in [i["title"] for i in _htm]
+# RSS側は不正URL5件すべて WARN。HTML側は "http" で始まらない href（javascript:）に collect_html が
+# base を前置して https://h.jp/javascript:... になり通過するため、拒否されるのは http:evil.jp の1件だけ
+assert _eb.getvalue().count("[WARN]") == len(_bad_urls) + 1, _eb.getvalue()
+print("ingest-time url scheme filter OK")
+
 print("ALL OK")
