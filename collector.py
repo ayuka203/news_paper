@@ -8,6 +8,7 @@ public/ は data/ から毎回完全に再構築する(=GitHub Pages成果物は
 """
 from __future__ import annotations
 import json, math, os, re, sys, datetime as dt, difflib, unicodedata
+from html import escape as _esc
 from pathlib import Path
 from urllib.parse import urlparse, urlunparse, parse_qsl, urlencode
 
@@ -72,9 +73,26 @@ def parse_date(s: str | None) -> dt.datetime | None:
         return None
 
 
+FEED_MAX_BYTES = 5_000_000  # RSS/HTML 1件あたりの本文上限。実際のフィードは数百KB〜1MB台なので余裕を持たせた値
+
+
+def _fmt_exc(ex: BaseException) -> str:
+    """例外をログ用の1行にする（型名 + repr の先頭200字、非印字文字はエスケープ）。
+    フィード由来の文字列に含まれる改行・ANSI・`::error::` 等でログが汚染されないようにする。"""
+    s = repr(ex)[:200]
+    return "".join(c if c.isprintable() else c.encode("unicode_escape").decode("ascii") for c in s)
+
+
 def http_get(url: str) -> requests.Response:
-    r = requests.get(url, headers={"User-Agent": UA}, timeout=HTTP_TIMEOUT)
-    r.raise_for_status()
+    """GET して本文を FEED_MAX_BYTES までで読み切る。超過は ResponseTooLarge（ValueError）。"""
+    r = requests.get(url, headers={"User-Agent": UA}, timeout=HTTP_TIMEOUT, stream=True)
+    try:
+        r.raise_for_status()
+        body = _read_capped(r, FEED_MAX_BYTES)
+    finally:
+        r.close()
+    r._content = body  # .content / .text から読めるようにする（stream=True でも上限つきで読み込み済み）
+    r._content_consumed = True
     return r
 
 
@@ -83,6 +101,8 @@ def collect_rss(src: dict) -> list[dict]:
     try:
         r = http_get(src["url"])
         feed = feedparser.parse(r.content)
+    except ResponseTooLarge:
+        raise  # 上限超過はこの媒体を失敗扱いにする（上限なしの feedparser 再取得にフォールバックしない）
     except Exception:
         feed = feedparser.parse(src["url"])
     gn = src.get("google_news", False)
@@ -260,7 +280,7 @@ def collect_all(sources: list[dict]) -> list[dict]:
             items.extend(got)
             print(f"  [{kind:11}] {src['name']}: {len(got)} 件", file=sys.stderr)
         except Exception as ex:  # 1媒体の失敗で全体を止めない
-            print(f"  [ERR ] {src['name']}: {ex}", file=sys.stderr)
+            print(f"  [ERR ] {src['name']}: {_fmt_exc(ex)}", file=sys.stderr)
     return items
 
 
@@ -440,17 +460,22 @@ def parse_stock_report(raw: bytes | str) -> dict | None:
         obj = json.loads(raw.decode("utf-8"), parse_constant=_reject_const)
         return _validate_stock_report(obj)
     except Exception as ex:  # 外部入力なので何が来ても節の省略に倒す
-        print(f"  [WARN] stock_watch: レポートJSONが不正のため節を省略: {ex}", file=sys.stderr)
+        print(f"  [WARN] stock_watch: レポートJSONが不正のため節を省略: {_fmt_exc(ex)}", file=sys.stderr)
         return None
 
 
-def _read_capped(resp) -> bytes:
-    """応答本文を読みながら累計が STOCK_MAX_BYTES を超えた時点で打ち切る（ValueError）。"""
+class ResponseTooLarge(ValueError):
+    """応答本文が上限を超えた。"""
+
+
+def _read_capped(resp, limit: int = STOCK_MAX_BYTES) -> bytes:
+    """応答本文を読みながら累計が limit を超えた時点で打ち切る（ResponseTooLarge = ValueError）。
+    iter_content は gzip 等を展開した後のバイト数で数える。"""
     buf = bytearray()
     for chunk in resp.iter_content(chunk_size=STOCK_STREAM_CHUNK):
         buf.extend(chunk)
-        if len(buf) > STOCK_MAX_BYTES:
-            raise ValueError(f"サイズ超過 (>{STOCK_MAX_BYTES} bytes)")
+        if len(buf) > limit:
+            raise ResponseTooLarge(f"サイズ超過 (>{limit} bytes)")
     return bytes(buf)
 
 
@@ -464,7 +489,7 @@ def _read_local_stock_report(path_str: str) -> dict | None:
             raise ValueError(f"サイズ超過: {p}")
         return parse_stock_report(p.read_bytes())
     except Exception as ex:
-        print(f"  [ERR ] stock_watch local json: {ex}", file=sys.stderr)
+        print(f"  [ERR ] stock_watch local json: {_fmt_exc(ex)}", file=sys.stderr)
         return None
 
 
@@ -507,25 +532,31 @@ def fetch_stock_report(config: dict) -> dict | None:
             if body.strip():
                 return parse_stock_report(body)
         except ValueError as ex:  # サイズ超過 = 不正扱い（古い日へは遡らない）
-            print(f"  [WARN] stock_watch: レポートJSONが不正のため節を省略 ({d}): {ex}", file=sys.stderr)
+            print(f"  [WARN] stock_watch: レポートJSONが不正のため節を省略 ({d}): {_fmt_exc(ex)}", file=sys.stderr)
             return None
         except Exception as ex:
-            print(f"  [ERR ] stock_watch fetch ({d}): {ex}", file=sys.stderr)
+            print(f"  [ERR ] stock_watch fetch ({d}): {_fmt_exc(ex)}", file=sys.stderr)
     return None
 
 
 def _safe_http_url(url) -> str | None:
-    """http/https かつホスト付きのURLだけ通す（javascript: 等は None）。"""
+    """http/https かつ有効なホスト付きのURLだけ通す（javascript: 等は None）。
+
+    strip 後に制御文字（< 0x20 / 0x7f）を含むものは拒否。ホスト部の空白も拒否。
+    パス等に含まれる半角スペースは %20 に置換して通す（ブラウザの解釈と同じで、リンクを失わない）。"""
     if not isinstance(url, str):
         return None
     u = url.strip()
+    if any(ord(c) < 0x20 or ord(c) == 0x7F for c in u):
+        return None
     try:
         p = urlparse(u)
+        p.port  # 範囲外・非数値のポートは ValueError
     except ValueError:
         return None
-    if p.scheme.lower() not in ("http", "https") or not p.netloc:
+    if p.scheme.lower() not in ("http", "https") or not p.hostname or " " in p.netloc:
         return None
-    return u
+    return u.replace(" ", "%20")
 
 
 def _headline_pool(articles: list[dict]) -> list[dict]:
@@ -708,6 +739,17 @@ def _render_edition(env, config, date_label, items, order, is_latest, stock=None
     )
 
 
+def _valid_date(v) -> str | None:
+    """YYYY-MM-DD（半角数字・実在する日付）だけ通し、パース結果から再構成した文字列を返す。
+    first_seen はファイルパスと HTML に入るため、生の文字列は使わない。"""
+    if not isinstance(v, str) or not re.fullmatch(r"[0-9]{4}-[0-9]{2}-[0-9]{2}", v):
+        return None
+    try:
+        return dt.date.fromisoformat(v).isoformat()
+    except ValueError:
+        return None
+
+
 def _date_label(d: str) -> str:
     try:
         y, m, day = d.split("-")
@@ -743,7 +785,11 @@ def build_site(all_items: list[dict], sources: list[dict], config: dict,
 
     by_date: dict[str, list] = {}
     for it in all_items:
-        by_date.setdefault(it.get("first_seen", today_str()), []).append(it)
+        fs = _valid_date(it.get("first_seen", today_str()))
+        if fs is None:
+            print(f"  [WARN] first_seen が不正な記事を除外: {str(it.get('first_seen'))[:40]!r}", file=sys.stderr)
+            continue
+        by_date.setdefault(fs, []).append(it)
     dates = sorted(by_date.keys(), reverse=True)
 
     # 各日付のアーカイブを生成（is_latest=False）
@@ -821,7 +867,7 @@ def build_site(all_items: list[dict], sources: list[dict], config: dict,
         try:
             stock_view = build_stock_view(stock_report, window_items)
         except Exception as ex:
-            print(f"  [ERR ] stock_watch render: {ex}", file=sys.stderr)
+            print(f"  [ERR ] stock_watch render: {_fmt_exc(ex)}", file=sys.stderr)
 
     index_label = _window_label(window_dates)
     index_html = _render_edition(env, config, index_label, window_items, order,
@@ -830,7 +876,7 @@ def build_site(all_items: list[dict], sources: list[dict], config: dict,
 
     # 過去号インデックス
     links = "\n".join(
-        f'<li><a href="{d}.html">{_date_label(d)}</a> '
+        f'<li><a href="{_esc(d)}.html">{_esc(_date_label(d))}</a> '
         f'<span>{len(deduped_by_date[d])}本</span></li>' for d in dates)
     (PUBLIC / "archive" / "index.html").write_text(
         f'<!doctype html><meta charset="utf-8"><title>過去号</title>'

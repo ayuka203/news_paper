@@ -783,7 +783,7 @@ for _name, _h, _days in _pages:
         for _t in _titles_by_day[_day]:
             assert f'<p class="hl">{_t}</p>' in _h, f"{_name}: 「{_t}」がリンクなしのプレーンテキストになっていない"
         for _t, _u in _good_by_day[_day]:
-            assert f'<p class="hl"><a href="{_u}" target="_blank" rel="noopener">{_t}</a></p>' in _h, f"{_name}: 正常URL「{_t}」がリンクでない"
+            assert f'<p class="hl"><a href="{_u}" target="_blank" rel="noopener noreferrer">{_t}</a></p>' in _h, f"{_name}: 正常URL「{_t}」がリンクでない"
 print("render-time url scheme sanitize OK")
 
 # アーカイブ済みデータの異常値: URL が str でない / 属性を壊す引用符入りの http URL
@@ -845,5 +845,164 @@ assert "html正常" in [i["title"] for i in _htm] and "html不正" not in [i["ti
 # base を前置して https://h.jp/javascript:... になり通過するため、拒否されるのは http:evil.jp の1件だけ
 assert _eb.getvalue().count("[WARN]") == len(_bad_urls) + 1, _eb.getvalue()
 print("ingest-time url scheme filter OK")
+
+# 29) 監査対応: URL強化 / rel / サイズ上限 / first_seen 検証 / ログ安全化
+# 29-a) _safe_http_url: 制御文字・不正ホストの拒否、空白は %20
+for _u in ["http://a.com/\tb", "http://a.com/\nb", "http://a.com/b\rc", "http://a.com/\x00", "http://a.com/\x7f",
+           "\x00http://a.com/", "\x08http://a.com/", "http://a.com/\x1b[0m", "http://a.com/\x0eb",
+           "http://@", "http://:80", "http:// /", "http://a.com:99999", "http://a.com:abc",
+           "http://a b.com/", "https://", "http:///x"]:
+    assert C._safe_http_url(_u) is None, repr(_u)
+assert C._safe_http_url("  http://a.com/x y?q=1 z  ") == "http://a.com/x%20y?q=1%20z"
+assert C._safe_http_url("http://user@a.com:8080/x?y=1#z") == "http://user@a.com:8080/x?y=1#z"
+assert C._safe_http_url("https://[::1]/x") == "https://[::1]/x"
+assert C._safe_http_url("HTTPS://Ex.com/%E3%81%82") == "HTTPS://Ex.com/%E3%81%82"
+# 空白入りURLは取り込み時も落とさない（リンクを失わない）
+_sp = C._item({"name": "S"}, "t", "https://ok.jp/a b", "")
+assert _sp is not None and _sp["url"] == "https://ok.jp/a%20b"
+print("safe_http_url hardening OK")
+
+# 29-b) 記事リンクの rel
+_rel_html = (Path(C.ROOT)/"templates"/"newspaper.html.j2").read_text(encoding="utf-8")
+assert 'rel="noopener">' not in _rel_html, "rel が noopener のみのリンクが残っている"
+shutil.rmtree(Path(C.ROOT)/"public", ignore_errors=True)
+C.build_site(_mk_url_arts(_d1), cfg["sources"], cfg)
+_rel_idx = (Path(C.ROOT)/"public"/"index.html").read_text(encoding="utf-8")
+assert _rel_idx.count('target="_blank" rel="noopener noreferrer">') >= 2
+assert 'rel="noopener">' not in _rel_idx
+print("article link rel OK")
+
+
+# 29-c) http_get のサイズ上限
+class _Stream:
+    """iter_content で chunk を流すだけの偽レスポンス。"""
+    def __init__(self, chunks, status=200):
+        self._chunks, self.status_code, self.closed = chunks, status, False
+
+    def raise_for_status(self):
+        if self.status_code >= 400:
+            raise C.requests.HTTPError(f"{self.status_code}")
+
+    def iter_content(self, chunk_size=1):
+        yield from self._chunks
+
+    @property
+    def content(self):  # 本物の Response と同様、http_get が設定した _content を返す
+        return self._content
+
+    def close(self):
+        self.closed = True
+
+
+_read = {"n": 0}
+
+
+def _endless():
+    while True:  # 上限で打ち切られなければ終わらない
+        _read["n"] += 1
+        yield b"x" * 65536
+
+
+_real_get2, _real_parse2 = C.requests.get, C.feedparser.parse
+try:
+    # 正常サイズ: 本文が .content で読める
+    _ok_resp = _Stream([b"<rss>", b"</rss>"])
+    C.requests.get = lambda *a, **k: _ok_resp
+    _got = C.http_get("https://ok.jp/feed")
+    assert _got.content == b"<rss></rss>" and _ok_resp.closed
+    # 無限ストリーム: 上限を超えた時点で ResponseTooLarge、無制限には読まない
+    _big = _Stream(_endless())
+    C.requests.get = lambda *a, **k: _big
+    try:
+        C.http_get("https://evil.jp/feed")
+        raise AssertionError("サイズ超過が拒否されていない")
+    except C.ResponseTooLarge:
+        pass
+    assert _big.closed and _read["n"] * 65536 <= C.FEED_MAX_BYTES + 2 * 65536
+    # collect_all: 超過した媒体は失敗扱い（ERR ログ）で他媒体は継続。上限なしの feedparser 再取得には落ちない
+    _fp_calls = []
+    C.feedparser.parse = lambda src, *a, **k: (_fp_calls.append(src), type("F", (), {"entries": [
+        {"title": "他媒体の正常記事", "link": "https://ok.jp/other"}]})())[1]
+    _resps = {"https://evil.jp/feed": _Stream(_endless()), "https://good.jp/feed": _Stream([b"<rss/>"])}
+    C.requests.get = lambda url, *a, **k: _resps[url]
+    with contextlib.redirect_stderr(io.StringIO()) as _eb:
+        _all = C.collect_all([{"name": "巨大媒体", "url": "https://evil.jp/feed"},
+                              {"name": "正常媒体", "url": "https://good.jp/feed"}])
+    assert [i["title"] for i in _all] == ["他媒体の正常記事"], _all
+    assert _fp_calls == [b"<rss/>"], f"feedparser が URL 再取得に使われた: {_fp_calls}"
+    assert "[ERR ] 巨大媒体" in _eb.getvalue() and "ResponseTooLarge" in _eb.getvalue()
+    # HTTPエラーも http_get 内で close され呼び出し元に伝わる
+    _e404 = _Stream([b"x"], status=404)
+    C.requests.get = lambda *a, **k: _e404
+    try:
+        C.http_get("https://x.jp/")
+        raise AssertionError("404 が例外にならない")
+    except C.requests.HTTPError:
+        assert _e404.closed
+finally:
+    C.requests.get, C.feedparser.parse = _real_get2, _real_parse2
+print("feed size cap OK")
+
+# 29-d) first_seen の検証（パス・HTML に生の値を入れない）
+_root = Path(C.ROOT)
+_before_root = sorted(p.name for p in _root.iterdir())
+_before_parent = sorted(p.name for p in _root.parent.iterdir())
+_bad_fs = ["../../x", "2026-13-40", "<script>", "２０２６-１０-０１", "2026-1-1", "2026-10-01/../x", None, 20]
+_fs_titles = ["洋上風力の入札", "蓄電池の接続", "需給調整の約定", "水素混焼の実証",
+              "送電線の増強", "原子力の審査", "地熱の開発", "料金補助の延長"]
+_fs_arts = []
+for _i, (_v, _t) in enumerate(zip(_bad_fs, _fs_titles)):
+    _fs_arts.append({"title": _t, "url": f"https://fs.jp/{_i}", "canonical": f"https://fs.jp/{_i}",
+                     "source": "X", "section": "規制・政策", "published": _pub(3), "first_seen": _v})
+_fs_arts.append({"title": "有効な日付の記事", "url": "https://fs.jp/ok", "canonical": "https://fs.jp/ok",
+                 "source": "X", "section": "規制・政策", "published": _pub(3), "first_seen": _d1})
+shutil.rmtree(Path(C.ROOT)/"public", ignore_errors=True)
+with contextlib.redirect_stderr(io.StringIO()) as _eb:
+    C.build_site(_fs_arts, cfg["sources"], cfg)
+assert _eb.getvalue().count("first_seen が不正") == len(_bad_fs), _eb.getvalue()
+assert sorted(p.name for p in _root.iterdir()) == _before_root, "リポジトリ直下にファイルが増えた"
+assert sorted(p.name for p in _root.parent.iterdir()) == _before_parent, "リポジトリの外にファイルが増えた"
+_arch_files = sorted(p.name for p in (_root/"public"/"archive").iterdir())
+assert _arch_files == sorted([f"{_d1}.html", "index.html"]), _arch_files
+_ai = (_root/"public"/"archive"/"index.html").read_text(encoding="utf-8")
+_ix = (_root/"public"/"index.html").read_text(encoding="utf-8")
+for _h in (_ai, _ix):
+    assert "<script" not in _h and "../../x" not in _h
+assert f'<a href="{_d1}.html">' in _ai
+assert "有効な日付の記事" in _ix and "洋上風力の入札" not in _ix
+# first_seen キー自体が無い記事は従来どおり今日扱い
+shutil.rmtree(Path(C.ROOT)/"public", ignore_errors=True)
+_nk = {k: v for k, v in _fs_arts[-1].items() if k != "first_seen"}
+C.build_site([_nk], cfg["sources"], cfg)
+assert (_root/"public"/"archive"/f"{_today}.html").exists()
+# _valid_date 単体（日付を再構成して返す）
+assert C._valid_date("2026-02-28") == "2026-02-28" and C._valid_date("2026-02-30") is None
+assert C._valid_date("2026-10-01\n") is None and C._valid_date("2026-10-01 ") is None
+print("first_seen validation OK")
+
+# 29-e) 例外ログは改行・制御文字を含まない1行
+_nasty = ValueError("boom\n::error::x\r\x1b[31mred" + "z" * 400)
+_line = C._fmt_exc(_nasty)
+assert "\n" not in _line and "\r" not in _line and "\x1b" not in _line
+assert _line.startswith("ValueError(") and len(_line) <= 200 + 40, len(_line)
+assert "\\n::error::x" in _line
+_real_rss = C.collect_rss
+try:
+    def _boom(src):
+        raise ValueError("bad\n::error::x\x1b[31m")
+    C.collect_rss = _boom
+    with contextlib.redirect_stderr(io.StringIO()) as _eb:
+        C.collect_all([{"name": "毒媒体", "url": "https://p.jp/feed"}])
+finally:
+    C.collect_rss = _real_rss
+_lines = _eb.getvalue().splitlines()
+assert len(_lines) == 1 and _lines[0].startswith("  [ERR ] 毒媒体: ValueError("), _lines
+assert not any(l.startswith("::") for l in _lines) and "\x1b" not in _eb.getvalue()
+# stock 経路のログも同様（不正JSONの本文由来メッセージ）
+with contextlib.redirect_stderr(io.StringIO()) as _eb:
+    assert C.parse_stock_report(b'{"a": "x\n::error::y" ') is None
+assert len(_eb.getvalue().splitlines()) == 1
+assert not any(l.startswith("::") for l in _eb.getvalue().splitlines())
+print("log injection safe OK")
 
 print("ALL OK")
