@@ -7,7 +7,7 @@ grid-news collector
 public/ は data/ から毎回完全に再構築する(=GitHub Pages成果物は使い捨て可能)。
 """
 from __future__ import annotations
-import json, math, os, re, sys, datetime as dt, difflib, unicodedata
+import io, json, math, os, re, sys, datetime as dt, difflib, unicodedata
 from html import escape as _esc
 from pathlib import Path
 from urllib.parse import urlparse, urlunparse, parse_qsl, urlencode
@@ -98,13 +98,12 @@ def http_get(url: str) -> requests.Response:
 
 # ---------------------------------------------------------------- collectors
 def collect_rss(src: dict) -> list[dict]:
-    try:
-        r = http_get(src["url"])
-        feed = feedparser.parse(r.content)
-    except ResponseTooLarge:
-        raise  # 上限超過はこの媒体を失敗扱いにする（上限なしの feedparser 再取得にフォールバックしない）
-    except Exception:
-        feed = feedparser.parse(src["url"])
+    # 取得失敗は握りつぶさず呼び出し元（collect_all の try/except）に伝える。
+    # feedparser に URL を渡す再取得は timeout も サイズ上限もないため行わない（取得済みバイト列のみ parse する）
+    r = http_get(src["url"])
+    # bytes を直接渡すと feedparser が先にローカルパス（UNC なら SMB 送信）として open しようとするため BytesIO で渡す
+    feed = feedparser.parse(io.BytesIO(r.content),
+                            response_headers={"content-type": r.headers.get("content-type", "")})
     gn = src.get("google_news", False)
     out = []
     for e in feed.entries:

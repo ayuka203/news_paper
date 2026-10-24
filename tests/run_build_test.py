@@ -827,6 +827,7 @@ class _Feed:
 _real_http_get, _real_parse = C.http_get, C.feedparser.parse
 class _Resp:
     content = b""
+    headers: dict = {}
     text = ("<ul><li><a href='https://ok.jp/h1'>html正常</a></li>"
             "<li><a href='http:evil.jp/x'>html不正</a></li>"
             "<li><a href='javascript:alert(1)'>htmlJS</a></li></ul>")
@@ -878,6 +879,7 @@ class _Stream:
     """iter_content で chunk を流すだけの偽レスポンス。"""
     def __init__(self, chunks, status=200):
         self._chunks, self.status_code, self.closed = chunks, status, False
+        self.headers = {}
 
     def raise_for_status(self):
         if self.status_code >= 400:
@@ -929,8 +931,36 @@ try:
         _all = C.collect_all([{"name": "巨大媒体", "url": "https://evil.jp/feed"},
                               {"name": "正常媒体", "url": "https://good.jp/feed"}])
     assert [i["title"] for i in _all] == ["他媒体の正常記事"], _all
-    assert _fp_calls == [b"<rss/>"], f"feedparser が URL 再取得に使われた: {_fp_calls}"
+    assert [x.getvalue() for x in _fp_calls] == [b"<rss/>"], f"feedparser が URL 再取得に使われた: {_fp_calls}"
     assert "[ERR ] 巨大媒体" in _eb.getvalue() and "ResponseTooLarge" in _eb.getvalue()
+    # 非サイズ系の失敗（HTTPError / timeout）でも feedparser に URL を渡さず、例外が collect_rss から伝わる
+    _fp_calls.clear()
+    for _exc in (C.requests.HTTPError("500"), C.requests.Timeout("slow")):
+        def _raise(*a, _x=_exc, **k):
+            raise _x
+        C.requests.get = _raise
+        try:
+            C.collect_rss({"name": "障害媒体", "url": "https://down.jp/feed"})
+            raise AssertionError(f"{type(_exc).__name__} が collect_rss から伝わらない")
+        except type(_exc):
+            pass
+    _e500 = _Stream([b"x"], status=500)
+    C.requests.get = lambda *a, **k: _e500
+    try:
+        C.collect_rss({"name": "障害媒体", "url": "https://down.jp/feed"})
+        raise AssertionError("500 が collect_rss から伝わらない")
+    except C.requests.HTTPError:
+        assert _e500.closed
+    assert _fp_calls == [], f"失敗時に feedparser が呼ばれた: {_fp_calls}"
+    # collect_all は非サイズ系の失敗も ERR ログにして継続（_fmt_exc 経由）
+    _resps2 = {"https://down.jp/feed": _Stream([b"x"], status=500), "https://good.jp/feed": _Stream([b"<rss/>"])}
+    C.requests.get = lambda url, *a, **k: _resps2[url]
+    with contextlib.redirect_stderr(io.StringIO()) as _eb2:
+        _all2 = C.collect_all([{"name": "障害媒体", "url": "https://down.jp/feed"},
+                               {"name": "正常媒体", "url": "https://good.jp/feed"}])
+    assert [i["title"] for i in _all2] == ["他媒体の正常記事"], _all2
+    assert "[ERR ] 障害媒体" in _eb2.getvalue() and "HTTPError" in _eb2.getvalue()
+    assert [x.getvalue() for x in _fp_calls] == [b"<rss/>"], _fp_calls
     # HTTPエラーも http_get 内で close され呼び出し元に伝わる
     _e404 = _Stream([b"x"], status=404)
     C.requests.get = lambda *a, **k: _e404
@@ -942,6 +972,29 @@ try:
 finally:
     C.requests.get, C.feedparser.parse = _real_get2, _real_parse2
 print("feed size cap OK")
+
+# 29-c2) 応答本文がパス文字列でもファイルとして開かれない（実 feedparser、builtins.open を監視）
+import builtins
+_real_get3, _real_open = C.requests.get, builtins.open
+_opened = []
+def _spy_open(f, *a, **k):
+    if isinstance(f, (str, bytes)):
+        _opened.append(f)
+    return _real_open(f, *a, **k)
+try:
+    for _body in (rb"C:\Windows\win.ini", rb"\\attacker.example\share\x.xml", b"/etc/passwd"):
+        _pr = _Stream([_body])
+        C.requests.get = lambda *a, _p=_pr, **k: _p
+        builtins.open = _spy_open
+        try:
+            _ents = C.collect_rss({"name": "P", "url": "https://p.jp/feed"})
+        finally:
+            builtins.open = _real_open
+        assert _ents == [], _ents
+    assert _opened == [], f"応答本文がファイルとして開かれた: {_opened}"
+finally:
+    C.requests.get, builtins.open = _real_get3, _real_open
+print("feed body not opened as path OK")
 
 # 29-d) first_seen の検証（パス・HTML に生の値を入れない）
 _root = Path(C.ROOT)
