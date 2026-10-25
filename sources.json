@@ -25,10 +25,12 @@
     },
     {
       "name": "Oxford Institute for Energy Studies",
-      "type": "rss",
-      "url": "https://www.oxfordenergy.org/feed/",
+      "type": "google_news",
+      "query": "site:oxfordenergy.org",
+      "hl": "en-US", "gl": "US", "ceid": "US:en",
       "section": "海外",
-      "_note": "WordPress標準フィードの想定。0件なら下のgoogle_news版に切替"
+      "max_age_days": 30,
+      "_note": "oxfordenergy.org/feed/ はGitHub Actionsから403(少なくとも2026-09-27以降毎回0件、10/25から[ERR])。CLAUDE.mdルール7(アクセス拒否ドメインへの機械アクセスはしない/回避しない)によりGoogle News経由に変更。Google Newsの索引は粗く、2026-10-25時点で直近7日0件・30日1件のためmax_age_days=30"
     },
     {
       "name": "World Nuclear News",

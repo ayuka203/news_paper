@@ -226,6 +226,39 @@ assert "脱炭素政策の動向について詳細解説" not in idx_per_src, "p
 assert "電力市場改革の最新論点を整理" in idx_per_src, "per-source 設定なしソースが誤って弾かれている"
 print("per-source display-time age filter test OK")
 
+# 14b) per-source max_age_days が global より長い場合は per-source 値で表示判定する
+def _wide_idx(global_age, items):
+    srcs = [{"name": "長期", "max_age_days": 30}, {"name": "短期", "max_age_days": 1}, {"name": "指定なし"}]
+    shutil.rmtree(Path(C.ROOT)/"public", ignore_errors=True)
+    C.build_site(items, srcs, {**cfg, "max_age_days": global_age, "index_window_days": 7})
+    return (Path(C.ROOT)/"public"/"index.html").read_text(encoding="utf-8")
+
+def _wi(title, host, source, days, published="auto"):
+    pub = (C.now_jst() - _dt.timedelta(days=days)).isoformat() if published == "auto" else published
+    return {"title": title, "url": f"https://{host}/a", "canonical": f"https://{host}/a",
+            "source": source, "section": "海外", "published": pub, "first_seen": _d1}
+
+_w20 = _wi("長期ソースの二十日前の研究報告", "w20.com", "長期", 20)
+_w31 = _wi("長期ソースの三十一日前の古い論考", "w31.com", "長期", 31)
+_wnone = _wi("長期ソースの日付不明の記事紹介", "wnone.com", "長期", 0, published="")
+_n10 = _wi("指定なしソースの十日前の話題記事", "n10.com", "指定なし", 10)
+_n3 = _wi("指定なしソースの三日前の最新記事", "n3.com", "指定なし", 3)
+_s3 = _wi("短期ソースの三日前の速報ニュース", "s3.com", "短期", 3)
+_idx_w = _wide_idx(7, [_w20, _w31, _wnone, _n10, _n3, _s3])
+assert "長期ソースの二十日前の研究報告" in _idx_w, "per-source 30日・global 7日で20日前記事が落ちた"
+assert "長期ソースの三十一日前の古い論考" not in _idx_w, "per-source 30日を超える記事が残っている"
+assert "長期ソースの日付不明の記事紹介" in _idx_w, "published 不明は従来どおり保持されるはず"
+assert "指定なしソースの十日前の話題記事" not in _idx_w, "per-source 設定なしは global 7日で落ちるはず"
+assert "指定なしソースの三日前の最新記事" in _idx_w
+assert "短期ソースの三日前の速報ニュース" not in _idx_w, "per-source 1日(global より小さい)は従来どおり落ちるはず"
+# global 無効(0): global フィルタなし。per-source は従来どおり単独で適用される
+_idx_w0 = _wide_idx(0, [_w20, _w31, _n10, _s3])
+assert "長期ソースの二十日前の研究報告" in _idx_w0
+assert "長期ソースの三十一日前の古い論考" not in _idx_w0
+assert "指定なしソースの十日前の話題記事" in _idx_w0, "global 無効なら per-source 設定なしは落ちない"
+assert "短期ソースの三日前の速報ニュース" not in _idx_w0
+print("per-source > global display-time age filter test OK")
+
 # 15) タイトル除外（exclude_title_patterns）テスト
 sample_titles = [
     {"title": "電力市場の動向"},
