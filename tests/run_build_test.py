@@ -1091,4 +1091,116 @@ assert len(_eb.getvalue().splitlines()) == 1
 assert not any(l.startswith("::") for l in _eb.getvalue().splitlines())
 print("log injection safe OK")
 
+# 30) 日またぎ重複: 直近7日の既存記事とタイトル類似 かつ 公開日差1日以内 → 落とす
+def _xd(days_ago):
+    return (_today_dt - dt.timedelta(days=days_ago)).strftime("%Y-%m-%d")
+def _xa(title, pub, first_seen, url="https://news.google.com/rss/articles/old"):
+    return {"title": title, "url": url, "canonical": url, "source": "S", "section": "原子力",
+            "published": pub, "first_seen": first_seen}
+_pub0 = _xd(2)
+_arch = [_xa("TNC Kentucky project gets approval", _pub0, _xd(2))]
+_same = [_xa("TNC Kentucky project gets approval", _pub0, _today, "https://news.google.com/rss/articles/new")]
+_k, _d = C.drop_recent_duplicates(_same, _arch, _today, 7)
+assert len(_k) == 0 and len(_d) == 1
+# 公開日が1日ずれ → なお落とす
+_k, _d = C.drop_recent_duplicates([_xa("TNC Kentucky project gets approval", _xd(1), _today, "https://news.google.com/rss/articles/n2")], _arch, _today, 7)
+assert len(_d) == 1
+# 定例会見: タイトル同一でも公開日が7日違う → 残す
+_k, _d = C.drop_recent_duplicates([_xa("TNC Kentucky project gets approval", _xd(-5), _today, "https://news.google.com/rss/articles/n3")], _arch, _today, 7)
+assert len(_k) == 1 and not _d
+# published が取れない（新着側 / 既存側）→ 残す
+_k, _d = C.drop_recent_duplicates([_xa("TNC Kentucky project gets approval", "", _today, "https://news.google.com/rss/articles/n4")], _arch, _today, 7)
+assert len(_k) == 1 and not _d
+_arch_nopub = [_xa("TNC Kentucky project gets approval", "", _xd(2))]
+_k, _d = C.drop_recent_duplicates(_same, _arch_nopub, _today, 7)
+assert len(_k) == 1 and not _d
+# 8日以上前の既存記事との一致 → 残す
+_arch_old = [_xa("TNC Kentucky project gets approval", _pub0, _xd(8))]
+_k, _d = C.drop_recent_duplicates(_same, _arch_old, _today, 7)
+assert len(_k) == 1 and not _d
+# 境界: 7日前ちょうどは対象
+_arch_edge = [_xa("TNC Kentucky project gets approval", _pub0, _xd(7))]
+_k, _d = C.drop_recent_duplicates(_same, _arch_edge, _today, 7)
+assert len(_d) == 1
+# 空入力・無効化
+assert C.drop_recent_duplicates([], _arch, _today, 7) == ([], [])
+assert C.drop_recent_duplicates(_same, [], _today, 7) == (_same, [])
+assert C.drop_recent_duplicates(_same, _arch, _today, 0) == (_same, [])
+# タイトルが似ていない → 残す
+_k, _d = C.drop_recent_duplicates([_xa("全く別の記事です", _pub0, _today, "https://news.google.com/rss/articles/n5")], _arch, _today, 7)
+assert len(_k) == 1
+# 同日バッチ内 dedup は従来どおり
+_b = [_xa("無電柱化 第3期計画を閣議決定", _pub0, _today, "https://a.jp/1"),
+      _xa("無電柱化　第３期計画を、閣議決定。", _pub0, _today, "https://b.jp/2")]
+assert len(C.dedup(_b)) == 1
+# 数字列が違う（第37回 vs 第38回、全角/半角は同一視）→ 残す／同じ→落とす
+_ar = [_xa("第37回 電力安全小委員会", _pub0, _xd(2))]
+_k, _d = C.drop_recent_duplicates([_xa("第38回 電力安全小委員会", _pub0, _today, "https://news.google.com/rss/articles/m1")], _ar, _today, 7)
+assert len(_k) == 1 and not _d
+_k, _d = C.drop_recent_duplicates([_xa("第３７回 電力安全小委員会", _pub0, _today, "https://news.google.com/rss/articles/m2")], _ar, _today, 7)
+assert len(_d) == 1
+assert C._digit_runs("令和９年度 第3回") == ["9", "3"]
+# 直接取得ソース（news.google.com 以外）は日またぎ照合しない → 残す
+_k, _d = C.drop_recent_duplicates([_xa("TNC Kentucky project gets approval", _pub0, _today, "https://wnn.example/a")], _arch, _today, 7)
+assert len(_k) == 1 and not _d
+_k, _d = C.drop_recent_duplicates([_xa("TNC Kentucky project gets approval", _pub0, _today, "not a url")], _arch, _today, 7)
+assert len(_k) == 1
+print("cross-day dedup OK")
+
+# 30b) 巨大/範囲外の window は例外にならない・長大タイトルでも判定できる
+assert C.drop_recent_duplicates(_same, _arch, _today, 10**12) == (_same, [])
+_long = "A" * 5000
+_k, _d = C.drop_recent_duplicates([_xa(_long + "x", _pub0, _today, "https://news.google.com/rss/articles/L")], [_xa(_long, _pub0, _xd(2))], _today, 7)
+assert len(_d) == 1
+
+# 30c) main() 経由: 落とした記事も seen に記録 / 無効な crossday_dedup_days は 7 にフォールバック
+import tempfile, shutil
+def _run_main(cfg_extra):
+    tmp = Path(tempfile.mkdtemp())
+    saved = (C.ROOT, C.DATA, C.JSONL, C.STATE_FILE, C.collect_all, C.fetch_stock_report, C.build_site)
+    try:
+        (tmp / "data").mkdir()
+        (tmp / "sources.json").write_text(json.dumps({"sources": [], "max_age_days": 0, **cfg_extra}), encoding="utf-8")
+        old = _xa("TNC Kentucky project gets approval", _pub0, _xd(2), "https://news.google.com/rss/articles/old")
+        (tmp / "data" / "archive.jsonl").write_text(json.dumps(old, ensure_ascii=False) + "\n", encoding="utf-8")
+        (tmp / "data" / "state.json").write_text(json.dumps({"seen": {old["canonical"]: _xd(2)}}), encoding="utf-8")
+        C.ROOT, C.DATA = tmp, tmp / "data"
+        C.JSONL, C.STATE_FILE = tmp / "data" / "archive.jsonl", tmp / "data" / "state.json"
+        dupe = _xa("TNC Kentucky project gets approval", _pub0, "", "https://news.google.com/rss/articles/new")
+        dupe["canonical"] = dupe["url"]
+        C.collect_all = lambda srcs: [dupe]
+        C.fetch_stock_report = lambda c: None
+        C.build_site = lambda *a, **k: None
+        with contextlib.redirect_stderr(io.StringIO()) as _e:
+            C.main()
+        state = json.loads((tmp / "data" / "state.json").read_text(encoding="utf-8"))
+        n = len([l for l in (tmp / "data" / "archive.jsonl").read_text(encoding="utf-8").splitlines() if l.strip()])
+        return state, n, _e.getvalue()
+    finally:
+        (C.ROOT, C.DATA, C.JSONL, C.STATE_FILE, C.collect_all, C.fetch_stock_report, C.build_site) = saved
+        shutil.rmtree(tmp, ignore_errors=True)
+_st, _n, _log = _run_main({})
+assert _n == 1 and "https://news.google.com/rss/articles/new" in _st["seen"] and "日またぎ重複: 1 件" in _log, _log
+for _bad in ("abc", 10**9, -1):
+    _st, _n, _log = _run_main({"crossday_dedup_days": _bad})
+    assert _n == 1 and "crossday_dedup_days が無効" in _log and "7日にフォールバック" in _log, _log
+    assert "https://news.google.com/rss/articles/new" in _st["seen"]
+_st, _n, _log = _run_main({"crossday_dedup_days": 0})   # 0 は無効化: 重複でも取り込まれる
+assert _n == 2 and "日またぎ重複" not in _log
+print("cross-day main OK")
+
+# 30d) 除外タイトル（Energizing Today）は日またぎ照合しない（norm_title 後の完全一致）
+_et_old = [_xa("Energizing Today", _pub0, _xd(2))]
+for _t in ("Energizing Today", "energizing  today", "Energizing Today:"):
+    _k, _d = C.drop_recent_duplicates([_xa(_t, _pub0, _today, "https://news.google.com/rss/articles/e1")], _et_old, _today, 7)
+    assert len(_k) == 1 and not _d, _t
+# 既存側だけが除外タイトルでも残す
+_k, _d = C.drop_recent_duplicates([_xa("Energizing Today", _pub0, _today, "https://news.google.com/rss/articles/e2")], _arch, _today, 7)
+assert len(_k) == 1
+# 完全一致のみ: 似ているだけの別題は従来どおり判定される
+_k, _d = C.drop_recent_duplicates([_xa("Energizing Today in Texas", _pub0, _today, "https://news.google.com/rss/articles/e3")],
+                                  [_xa("Energizing Today in Texas", _pub0, _xd(2))], _today, 7)
+assert len(_d) == 1
+print("cross-day exclude OK")
+
 print("ALL OK")

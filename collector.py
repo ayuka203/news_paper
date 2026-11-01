@@ -29,6 +29,10 @@ JST = dt.timezone(dt.timedelta(hours=9))
 UA = "Mozilla/5.0 (compatible; GridNewsBot/1.0; +https://github.com/)"
 HTTP_TIMEOUT = 20
 SIM_THRESHOLD = 0.82  # タイトル類似度の重複しきい値
+CROSSDAY_DEDUP_DAYS = 7  # 日またぎ重複判定で突き合わせる既存記事の first_seen 範囲（日）
+CROSSDAY_HOSTS = ("news.google.com",)  # 日またぎ照合は URL が日によって変わるこのホストの新着だけに適用
+CROSSDAY_TITLE_MAX = 200  # 類似度計算に使う正規化タイトルの上限文字数（計算量の抑制）
+CROSSDAY_PUB_GAP_DAYS = 1  # 日またぎ重複とみなす公開日の差の上限（日）
 TRACKING = re.compile(r"^(utm_|fbclid|gclid|mc_|ref$|ref_src|spm|igshid)")
 
 
@@ -59,6 +63,9 @@ def norm_title(t: str) -> str:
     t = re.sub(r"\s+", "", t or "")
     t = re.sub(r"[【】\[\]（）()\u3000ー―—–\-|:：・,，、。．.]", "", t)
     return t.lower()
+
+
+CROSSDAY_EXCLUDE_TITLES = frozenset({norm_title("Energizing Today")})  # 毎日別記事が同題で出る連載。日またぎ照合の対象外（norm_title 後に完全一致）
 
 
 def parse_date(s: str | None) -> dt.datetime | None:
@@ -687,6 +694,60 @@ def dedup(items: list[dict]) -> list[dict]:
     return out
 
 
+def _digit_runs(t: str) -> list[str]:
+    """全角を半角にそろえてから数字列を抜き出す（第37回/年月日など別記事の見分け用）。"""
+    return re.findall(r"\d+", unicodedata.normalize("NFKC", t or ""))
+
+
+def _is_crossday_host(it: dict) -> bool:
+    try:
+        return (urlparse(it.get("url") or "").hostname or "").lower() in CROSSDAY_HOSTS
+    except ValueError:
+        return False
+
+
+def drop_recent_duplicates(items: list[dict], archive: list[dict], today: str,
+                           window_days: int) -> tuple[list[dict], list[dict]]:
+    """直近 window_days 日に first_seen した既存記事と、タイトル類似かつ公開日差が
+    CROSSDAY_PUB_GAP_DAYS 以内のものを重複として除く。(残す, 落とす) を返す。
+    公開日がどちらか不明、または数字列が異なる場合は重複とみなさない（誤って消すより残すほうが害が小さい）。
+    対象は URL が不安定な CROSSDAY_HOSTS の新着のみ。それ以外は従来どおり URL 判定だけ。"""
+    if window_days <= 0 or not items or not archive:
+        return items, []
+    try:
+        floor = (dt.date.fromisoformat(today) - dt.timedelta(days=window_days)).isoformat()
+    except (ValueError, OverflowError):
+        return items, []
+    cands = []  # (norm_title, 公開日 date, 数字列) 公開日不明の既存記事は比較対象外
+    for a in archive:
+        if str(a.get("first_seen") or "") < floor:
+            continue
+        pd = parse_date(a.get("published"))
+        nt = norm_title(a.get("title", ""))[:CROSSDAY_TITLE_MAX]
+        if pd is not None and nt and nt not in CROSSDAY_EXCLUDE_TITLES:
+            cands.append((nt, pd.date(), _digit_runs(a.get("title", ""))))
+    if not cands:
+        return items, []
+    kept, dropped = [], []
+    for it in items:
+        pd = parse_date(it.get("published"))
+        nt = norm_title(it.get("title", ""))[:CROSSDAY_TITLE_MAX]
+        dup = False
+        if pd is not None and nt and nt not in CROSSDAY_EXCLUDE_TITLES and _is_crossday_host(it):
+            d0 = pd.date()
+            digits = _digit_runs(it.get("title", ""))
+            for ct, cd, cdig in cands:
+                if abs((d0 - cd).days) > CROSSDAY_PUB_GAP_DAYS or digits != cdig:
+                    continue
+                sm = difflib.SequenceMatcher(None, nt, ct)
+                if sm.real_quick_ratio() >= SIM_THRESHOLD and sm.quick_ratio() >= SIM_THRESHOLD \
+                        and sm.ratio() >= SIM_THRESHOLD:
+                    dup = True
+                    break
+        (dropped if dup else kept).append(it)
+    return kept, dropped
+
+
 # ---------------------------------------------------------------- rendering
 def _section_order(sources: list[dict], config: dict) -> list[str]:
     if config.get("section_order"):
@@ -930,15 +991,26 @@ def main() -> int:
         fetched = out
         print(f"鮮度フィルタ: {before} -> {len(fetched)} 件 (max_age={max_age}d, per-source pre-filtered: {pre})", file=sys.stderr)
 
+    try:
+        xday = int(cfg.get("crossday_dedup_days", CROSSDAY_DEDUP_DAYS))
+        if not 0 <= xday <= 365:
+            raise ValueError(xday)
+    except (TypeError, ValueError, OverflowError):
+        print(f"WARN: crossday_dedup_days が無効(0〜365)。{CROSSDAY_DEDUP_DAYS}日にフォールバック。", file=sys.stderr)
+        xday = CROSSDAY_DEDUP_DAYS
+
     today = today_str()
     new = []
     for it in fetched:
         c = it["canonical"]
         if c in seen:
             continue
-        seen[c] = today
+        seen[c] = today  # 重複として落とす記事も記録し、翌日の再判定を避ける
         it["first_seen"] = today
         new.append(it)
+    new, xdropped = drop_recent_duplicates(new, archive, today, xday)
+    if xdropped:
+        print(f"日またぎ重複: {len(xdropped)} 件を除外 (直近{xday}日, 公開日差{CROSSDAY_PUB_GAP_DAYS}日以内)", file=sys.stderr)
     new = dedup(new)
     print(f"新着 {len(new)} 件 / 取得 {len(fetched)} 件", file=sys.stderr)
 
