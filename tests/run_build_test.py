@@ -1273,6 +1273,16 @@ for _bu in ("https://ex.com/a" + chr(0x200b), "https://ex.com/a" + chr(0x202e), 
     assert (_r is None) == (any(_u2.category(c).startswith("C") for c in _bu) or len(_bu) > 2000), _bu
 assert C.build_inbox_url({"title": "t", "url": "https://ex.com/" + "a" * 1985}, _IB)          # ちょうど2000文字は可
 assert C.build_inbox_url({"title": "t", "url": "https://ex.com/" + "a" * 1986}, _IB) is None  # 2001文字
+# 空白類（Zl/Zp/Zs・isspace）を含む URL はリンクなし。非ASCII（日本語）だけの URL と半角スペース（%20化）は従来どおり
+for _sp in ("\u2028", "\u2029", "\u3000", "\u00a0", "\u0085"):
+    assert C.build_inbox_url({"title": "t", "url": "https://ex.com/a" + _sp + "b"}, _IB) is None, repr(_sp)
+    assert C.build_inbox_url({"title": "t", "url": "https://ex.com/a?q=" + _sp + "x"}, _IB) is None, repr(_sp)
+assert C.build_inbox_url({"title": "t", "url": "https://ex.com/a"}, _IB)
+assert C.build_inbox_url({"title": "t", "url": "https://ex.com/電力/あ?q=送電"}, _IB)
+assert _tq({"title": "t", "url": "https://ex.com/a b"})["body"] == ["https://ex.com/a%20b\n\n"]
+# タイトルの U+2028/U+2029 は空白まとめで消える（title パラメータに残らない）
+_t2 = _tq({"title": "a\u2028b\u2029c", "url": "https://ex.com/a"})["title"]
+assert _t2 == ["a b c"] and not any(c in _t2[0] for c in "\u2028\u2029"), _t2
 C._inbox_warned.clear()
 with contextlib.redirect_stderr(io.StringIO()) as _e:
     assert C.build_inbox_url(_ia, {"issue_url": _IB["issue_url"], "label": 5}) is None

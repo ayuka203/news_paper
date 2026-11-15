@@ -794,7 +794,10 @@ def build_inbox_url(item: dict, inbox: dict | None) -> str | None:
             print(f"  [WARN] inbox: {what} が不正のためメモリンクを出力しません: {shown!r}", file=sys.stderr)
         return None
     url = _safe_http_url(item.get("url"))
-    if not url or len(url) > INBOX_URL_MAX or any(unicodedata.category(c).startswith("C") for c in url):
+    # 制御文字（C*）に加え、空白類（isspace / Z*: U+2028・U+2029・U+3000・U+00A0 等）も拒否する。
+    # 受け口は「URL 行より後」をメモとして保存するため、保存時に改行へ変換されうる文字を URL に入れない。
+    if not url or len(url) > INBOX_URL_MAX or any(
+            c.isspace() or unicodedata.category(c)[0] in "CZ" for c in url):
         return None
     # 不可視・制御文字（ゼロ幅、bidi、タグ文字、NUL、ESC 等）を除去 → 空白まとめ → 切り詰め
     raw_title = "".join(c if c.isspace() or not unicodedata.category(c).startswith("C") else ""
