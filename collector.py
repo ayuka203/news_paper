@@ -10,7 +10,7 @@ from __future__ import annotations
 import io, json, math, os, re, sys, datetime as dt, difflib, unicodedata
 from html import escape as _esc
 from pathlib import Path
-from urllib.parse import urlparse, urlunparse, parse_qsl, urlencode
+from urllib.parse import urlparse, urlunparse, parse_qsl, urlencode, quote
 
 import requests
 import feedparser
@@ -33,6 +33,10 @@ CROSSDAY_DEDUP_DAYS = 7  # 日またぎ重複判定で突き合わせる既存�
 CROSSDAY_HOSTS = ("news.google.com",)  # 日またぎ照合は URL が日によって変わるこのホストの新着だけに適用
 CROSSDAY_TITLE_MAX = 200  # 類似度計算に使う正規化タイトルの上限文字数（計算量の抑制）
 CROSSDAY_PUB_GAP_DAYS = 1  # 日またぎ重複とみなす公開日の差の上限（日）
+INBOX_TITLE_MAX = 200  # Issue 作成リンクに載せるタイトルの上限文字数（URL が長くなりすぎないように）
+INBOX_PATH = re.compile(r"^/[A-Za-z0-9_.-]+/[A-Za-z0-9_.-]+/issues/new$")
+_inbox_warned: set[tuple] = set()
+INBOX_URL_MAX = 2000  # 記事URLの上限文字数（超えたらリンクを出さない）
 TRACKING = re.compile(r"^(utm_|fbclid|gclid|mc_|ref$|ref_src|spm|igshid)")
 
 
@@ -761,11 +765,55 @@ def _section_order(sources: list[dict], config: dict) -> list[str]:
     return order
 
 
+def build_inbox_url(item: dict, inbox: dict | None) -> str | None:
+    """記事1件から GitHub の入力済み Issue 作成画面の URL を作る。
+
+    inbox は sources.json の `inbox`（issue_url / label）。未設定・空・検証NG・記事URLなしは None（リンクなし）。
+    issue_url は https://github.com/<owner>/<repo>/issues/new だけ通す（設定ミスで任意サイトへのリンクを出さない）。
+    body は「記事URL＋改行2つ」（1行目が URL であることが受け口側の前提）。"""
+    if not inbox or not isinstance(inbox, dict):
+        return None
+    base = inbox.get("issue_url")
+    label = inbox.get("label")
+    if not base:
+        return None
+    ok = False
+    if isinstance(base, str):
+        try:
+            p = urlparse(base.strip())
+            ok = (p.scheme == "https" and p.netloc == "github.com" and not (p.query or p.fragment or p.params)
+                  and bool(INBOX_PATH.match(p.path)))
+        except ValueError:
+            ok = False
+    label_bad = not isinstance(label, (str, type(None)))
+    if not ok or label_bad:
+        what = "label" if (ok and label_bad) else "issue_url"
+        shown = str(label if what == "label" else base)[:80]
+        if (what, shown) not in _inbox_warned:
+            _inbox_warned.add((what, shown))
+            print(f"  [WARN] inbox: {what} が不正のためメモリンクを出力しません: {shown!r}", file=sys.stderr)
+        return None
+    url = _safe_http_url(item.get("url"))
+    if not url or len(url) > INBOX_URL_MAX or any(unicodedata.category(c).startswith("C") for c in url):
+        return None
+    # 不可視・制御文字（ゼロ幅、bidi、タグ文字、NUL、ESC 等）を除去 → 空白まとめ → 切り詰め
+    raw_title = "".join(c if c.isspace() or not unicodedata.category(c).startswith("C") else ""
+                        for c in str(item.get("title") or ""))
+    title = " ".join(raw_title.split())[:INBOX_TITLE_MAX]
+    q = {}
+    if label:
+        q["labels"] = label
+    q["title"] = title
+    q["body"] = url + "\n\n"
+    return base.strip() + "?" + urlencode(q, quote_via=quote)
+
+
 def _render_edition(env, config, date_label, items, order, is_latest, stock=None):
     by_sec: dict[str, dict[str, list]] = {}
     for raw in items:
         it = dict(raw)  # シャローコピーで元 dict の汚染を防ぐ
         it["url"] = _safe_http_url(it.get("url"))  # 不正スキームは None（テンプレート側でリンクなしにする）
+        it["inbox_url"] = build_inbox_url(it, config.get("inbox"))
         d = parse_date(it.get("published"))
         it["_sort"] = d.timestamp() if d else 0
         it["date_display"] = f"{d.month}月{d.day}日" if d else ""

@@ -85,6 +85,10 @@
         background:linear-gradient(var(--rule),var(--rule)) 0 1.15em/0 1px no-repeat;
         transition:background-size .2s}
   .hl a:hover{background-size:100% 1px; color:var(--accent)}
+  .hl a.memo{font-weight:400; font-size:.68rem; letter-spacing:.08em; color:var(--muted);
+             border:1px solid var(--rule); padding:0 .35em; margin-left:.4em; white-space:nowrap;
+             vertical-align:.1em; background:none}
+  .hl a.memo:hover{color:var(--accent); border-color:var(--accent)}
   .meta{font-size:.68rem; letter-spacing:.1em; text-transform:uppercase;
         color:var(--muted); margin:.35rem 0 0}
   .meta .src{color:var(--accent); font-weight:600}
@@ -183,7 +187,7 @@
         <div class="source-arts">
           {% for a in grp.arts %}
           <article class="art">
-            <p class="hl">{% if a.url %}<a href="{{ a.url }}" target="_blank" rel="noopener noreferrer">{{ a.title }}</a>{% else %}{{ a.title }}{% endif %}</p>
+            <p class="hl">{% if a.url %}<a href="{{ a.url }}" target="_blank" rel="noopener noreferrer">{{ a.title }}</a>{% else %}{{ a.title }}{% endif %}{% if a.inbox_url %} <a class="memo" href="{{ a.inbox_url }}" target="_blank" rel="noopener noreferrer" title="reg-harness に送る（Issue 作成画面を開く）">メモ</a>{% endif %}</p>
             {% if a.date_display %}<p class="meta">{{ a.date_display }}</p>{% endif %}
           </article>
           {% endfor %}

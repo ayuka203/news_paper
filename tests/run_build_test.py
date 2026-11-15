@@ -33,6 +33,7 @@ assert len(d) == 2, d
 # 3) build_site が index.html を生成するか（first_seen付与）
 for it in d: it["first_seen"] = _d1
 cfg = json.loads((Path(C.ROOT)/"sources.json").read_text(encoding="utf-8"))
+cfg.pop("inbox", None)  # 本番のメモリンク設定に既存テストの完全一致が左右されないようにする（31 で個別に検証）
 C.build_site(d, cfg["sources"], cfg)
 idx = (Path(C.ROOT)/"public"/"index.html").read_text(encoding="utf-8")
 expected_masthead = cfg.get("masthead", "DAILY NEWS")
@@ -1202,5 +1203,91 @@ _k, _d = C.drop_recent_duplicates([_xa("Energizing Today in Texas", _pub0, _toda
                                   [_xa("Energizing Today in Texas", _pub0, _xd(2))], _today, 7)
 assert len(_d) == 1
 print("cross-day exclude OK")
+
+# 31) メモリンク（inbox）: URL 組み立て・検証・テンプレート出力
+from urllib.parse import urlparse as _up, parse_qs as _pq
+import html as _html
+_IB = {"issue_url": "https://github.com/ayuka203/reg-harness/issues/new", "label": "read-inbox"}
+_ia = {"title": "A & B #1 100% 送電\n網 = 新ルール", "url": "https://ex.com/a?x=1&y=2"}
+_iu = C.build_inbox_url(_ia, _IB)
+assert _iu.startswith("https://github.com/ayuka203/reg-harness/issues/new?labels=read-inbox&title=")
+_iq = _pq(_up(_iu).query, keep_blank_values=True)
+assert _iq["labels"] == ["read-inbox"] and _iq["title"] == ["A & B #1 100% 送電 網 = 新ルール"], _iq
+assert _iq["body"] == ["https://ex.com/a?x=1&y=2\n\n"] and _iu.endswith("%0A%0A")
+assert "#" not in _iu and " " not in _iu and "\n" not in _iu and chr(10) not in _iu
+assert C.build_inbox_url({"title": "t", "url": "https://ex.com/a"}, _IB).endswith("&body=https%3A%2F%2Fex.com%2Fa%0A%0A")
+# タイトル長の上限
+_lt = _pq(_up(C.build_inbox_url({"title": "あ" * 500, "url": "https://ex.com/a"}, _IB)).query)["title"][0]
+assert len(_lt) == C.INBOX_TITLE_MAX
+# 設定なし/空/URLなし/不正スキームの記事
+for _cfgx in (None, {}, {"issue_url": ""}, {"label": "x"}, "str", []):
+    assert C.build_inbox_url(_ia, _cfgx) is None, _cfgx
+assert C.build_inbox_url({"title": "t", "url": ""}, _IB) is None
+assert C.build_inbox_url({"title": "t"}, _IB) is None
+assert C.build_inbox_url({"title": "t", "url": "javascript:alert(1)"}, _IB) is None
+# issue_url 検証（不正は None + 警告）
+_bads = ["http://github.com/o/r/issues/new", "https://evil.example/o/r/issues/new",
+         "https://github.com.evil.example/o/r/issues/new", "https://user@github.com/o/r/issues/new",
+         "https://github.com:444/o/r/issues/new", "https://github.com/o/issues/new",
+         "https://github.com/o/r/issues", "https://github.com/o/r/issues/new/x",
+         "https://github.com/o/r/issues/new?a=1", "https://github.com/o/r/issues/new#f",
+         "https://github.com/o/r/pulls/new", "javascript:alert(1)", 123, "https://github.com//r/issues/new"]
+for _b in _bads:
+    C._inbox_warned.clear()
+    with contextlib.redirect_stderr(io.StringIO()) as _e:
+        assert C.build_inbox_url(_ia, {"issue_url": _b, "label": "l"}) is None, _b
+    assert "[WARN] inbox" in _e.getvalue(), _b
+# label なしでも動く（labels を付けない）
+assert "labels=" not in C.build_inbox_url(_ia, {"issue_url": _IB["issue_url"]})
+# テンプレート: 出る/出ない・エスケープ（二重エスケープなし）
+from jinja2 import Environment as _Env, FileSystemLoader as _FSL, select_autoescape as _sa
+_env = _Env(loader=_FSL(str(C.TEMPLATES)), autoescape=_sa(["html", "j2"]))
+_ritems = [{"title": 'A & B "q" <x>', "url": "https://ex.com/a?x=1&y=2", "source": "S", "section": "規制・政策", "published": _d1},
+           {"title": "URLなし記事", "url": "", "source": "S", "section": "規制・政策", "published": _d1}]
+_html_on = C._render_edition(_env, {"inbox": _IB}, "x", _ritems, ["規制・政策"], True)
+assert _html_on.count('class="memo"') == 1       # URL なし記事には出ない
+_href = _html.unescape(__import__("re").search(r'<a class="memo" href="([^"]+)"', _html_on).group(1))
+assert _href == C.build_inbox_url(_ritems[0], _IB), _href   # 1回だけエスケープされ、ブラウザ解釈後に元URLへ戻る
+assert "&amp;title=" in _html_on and "&amp;amp;" not in _html_on
+assert 'target="_blank" rel="noopener noreferrer" title="reg-harness' in _html_on
+for _cfgx in ({}, {"inbox": {}}, {"inbox": {"issue_url": "https://evil.example/o/r/issues/new"}}):
+    C._inbox_warned.clear()
+    with contextlib.redirect_stderr(io.StringIO()):
+        _h = C._render_edition(_env, _cfgx, "x", _ritems, ["規制・政策"], True)
+    assert 'class="memo"' not in _h and "github.com" not in _h
+# 設定なしの出力は inbox 未対応時と同一（memo CSS 以外に差分なし）
+assert 'href="https://github.com' not in C._render_edition(_env, {}, "x", _ritems, ["規制・政策"], True)
+print("inbox OK")
+# 31b) 不可視文字・URL 検査・label 警告・build_site end-to-end
+_zw = chr(0x200b) + chr(0x202e) + chr(0xe0041) + chr(0) + chr(0x1b) + chr(0xfeff)
+_tq = lambda it: _pq(_up(C.build_inbox_url(it, _IB)).query, keep_blank_values=True)
+assert _tq({"title": "送" + _zw + "電", "url": "https://ex.com/a"})["title"] == ["送電"]
+for _ch in (0x200b, 0x202e, 0xe0041, 0, 0x1b):
+    assert _tq({"title": "a" + chr(_ch) + "b", "url": "https://ex.com/a"})["title"] == ["ab"]
+assert _tq({"title": "a" + chr(10) + chr(9) + "b", "url": "https://ex.com/a"})["title"] == ["a b"]   # 改行・タブは空白扱い
+assert _tq({"title": _zw, "url": "https://ex.com/a"})["title"] == [""]          # 空になってもリンクは出す
+assert _tq({"title": chr(0x200b) * 300 + "あ" * 300, "url": "https://ex.com/a"})["title"] == ["あ" * C.INBOX_TITLE_MAX]  # 除去後に切る
+for _bu in ("https://ex.com/a" + chr(0x200b), "https://ex.com/a" + chr(0x202e), "https://ex.com/" + chr(0xe0041),
+            "https://ex.com/%00", "https://ex.com/" + "a" * 2000):
+    _r = C.build_inbox_url({"title": "t", "url": _bu}, _IB)
+    assert (_r is None) == (any(_u2.category(c).startswith("C") for c in _bu) or len(_bu) > 2000), _bu
+assert C.build_inbox_url({"title": "t", "url": "https://ex.com/" + "a" * 1985}, _IB)          # ちょうど2000文字は可
+assert C.build_inbox_url({"title": "t", "url": "https://ex.com/" + "a" * 1986}, _IB) is None  # 2001文字
+C._inbox_warned.clear()
+with contextlib.redirect_stderr(io.StringIO()) as _e:
+    assert C.build_inbox_url(_ia, {"issue_url": _IB["issue_url"], "label": 5}) is None
+assert "label が不正" in _e.getvalue() and "issue_url が不正" not in _e.getvalue()
+_pub_saved = C.PUBLIC
+with tempfile.TemporaryDirectory() as _td:
+    C.PUBLIC = Path(_td)
+    try:
+        C.build_site([{**_ritems[0], "canonical": "https://ex.com/a?x=1&y=2", "first_seen": _d1}], cfg["sources"], {**cfg, "inbox": _IB})
+        _idx = (Path(_td) / "index.html").read_text(encoding="utf-8")
+        assert 'class="memo"' in _idx and "labels=read-inbox" in _idx
+        C.build_site([{**_ritems[0], "canonical": "https://ex.com/a?x=1&y=2", "first_seen": _d1}], cfg["sources"], cfg)
+        assert 'class="memo"' not in (Path(_td) / "index.html").read_text(encoding="utf-8")
+    finally:
+        C.PUBLIC = _pub_saved
+print("inbox 31b OK")
 
 print("ALL OK")

@@ -6,6 +6,12 @@
   "index_window_days": 7,
   "max_age_days": 7,
 
+  "inbox": {
+    "issue_url": "https://github.com/ayuka203/reg-harness/issues/new",
+    "label": "read-inbox",
+    "_note": "任意。各記事の見出し横に「メモ」リンクを出し、タイトルとURL入力済みのIssue作成画面を開く。issue_url は https://github.com/<owner>/<repo>/issues/new 形式のみ有効。未設定・空・不正ならリンクなし"
+  },
+
   "stock_watch": {
     "enabled": true,
     "repo": "ayuka203/stock-price-checker",

@@ -73,6 +73,13 @@ RSSが無い／自動取得が弾かれる媒体は **Google News** を経由し
 - Google News は大量・高頻度アクセスでレート制限がかかる場合あり。日次・低頻度なら問題ありません。
 - 政府系サイトを直接スクレイプ（type:html）する場合は各サイトの利用規約・robotsに従ってください。本構成は極力RSS/Google News経由にしています。
 
+## メモリンク（read-inbox への送信）
+`sources.json` の任意キー `inbox`（`issue_url` / `label`）を設定すると、各記事の見出し横に小さな「メモ」リンクが付きます。
+押すと、`label` 付き・タイトルと記事URL入力済み（body は「URL＋改行2つ」）の GitHub Issue 作成画面が新しいタブで開きます。
+- `issue_url` は `https://github.com/<owner>/<repo>/issues/new` の形式のみ有効。不正な値は警告ログを出してリンクなしにします。
+- `inbox` が未設定・空のときはリンクを一切出力しません（従来と同一の出力）。
+- タイトルは200文字で切り詰めます。Market Pulse の関連見出しには付きません。
+
 ## Market Pulse（株価と見出しの紐付け）
 `sources.json` の `stock_watch` で指定した別リポジトリ（stock-price-checker）の `reports/YYYY-MM-DD.json`（schema_version=1）を取得し、
 index.html 末尾に「Market Pulse」節として描画します。目立った動きの銘柄は、各銘柄の `keywords` と index に載る記事タイトルを照合し、関連見出しを最大2件紐付けます。
