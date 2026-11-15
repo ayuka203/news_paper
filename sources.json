@@ -40,10 +40,10 @@
     },
     {
       "name": "World Nuclear News",
-      "type": "google_news",
-      "query": "site:world-nuclear-news.org",
-      "hl": "en-US", "gl": "US", "ceid": "US:en",
-      "section": "原子力"
+      "type": "rss",
+      "url": "https://www.world-nuclear-news.org/rss",
+      "section": "原子力",
+      "_note": "2026-11-15にGoogle News経由から公式フィードへ切替(理由: Google Newsの中継URLではread-inboxが本文を取得できないため)。1週間の試行(2026-11-22に評価)。GitHub Actionsからの取得が拒否された場合は回避せず、Google News経由(site:world-nuclear-news.org, hl=en-US, gl=US, ceid=US:en)に戻す"
     },
     {
       "name": "T&D World",

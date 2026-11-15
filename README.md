@@ -55,7 +55,7 @@ python collector.py          # public/ を生成
 |---|---|---|
 | EIA Today in Energy | ネイティブRSS | 確認済み。プレスは `press_rss.xml` |
 | Oxford Energy | ネイティブRSS | `/feed/`（WordPress想定）。0件ならgoogle_newsへ |
-| World Nuclear News | Google News | site:指定 |
+| World Nuclear News | ネイティブRSS | `/rss`。2026-11-15にGoogle Newsから切替（1週間の試行。拒否されたらGoogle Newsに戻す） |
 | T&D World | Google News | site:指定 |
 | 経済産業省（エネルギー） | Google News | 完全網羅は `meti.go.jp/rss/` のネイティブRSSへ差替推奨 |
 | METI Journal | Google News | ネイティブRSSあり（`journal.meti.go.jp/new-rss/`） |
